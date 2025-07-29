@@ -1,0 +1,175 @@
+---
+title: "AVISO+ Velocity Dataset"
+author: "Sebastian Di Geronimo"
+date: 2025-07-14
+format: html
+editor: source
+---
+
+# ---- Summary of Document ----
+
+Download AVISO+ data to get geostrophic velocities in the Florida Keys. The 
+geostrophic velocities can be used to estimate where the Florida Current (FC) is
+in relation to the coastline. The years used are 2015 - Nov 2024 (based on 
+data availability).
+
+A threshold of >= 0.5 m/s is used to determine the FC based on a Zhang et al., 2022.
+
+
+# ---- AVISO+ Sea Surface Height and Velocity ----
+
+Data downloaded from `Copernicus` for both absolute dynamic topography (m) and
+north/east surface velocities (m/s)
+
+Data:       Global Ocean Gridded L4 Sea Surface Heights And Derived Variables
+Search:     <https://data.marine.copernicus.eu/products>
+Product ID: `SEALEVEL_GLO_PHY_L4_MY_008_047`
+Dataset ID: `cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1D`
+Description: <https://data.marine.copernicus.eu/product/SEALEVEL_GLO_PHY_L4_MY_008_047/description>
+Bounds:     
+  Lon: -83.8125, -78.3125  
+  Lat:  22.8125,  26.4375
+Note: Select all data products when downloading from `MyOceanPro`
+      If downloading from `description` page, go to `Data access` then `subset`, 
+      then `automate`. Copy the `automate` and modify script below to download
+      multiple dates.
+
+Data Info:
+<https://documentation.marine.copernicus.eu/PUM/CMEMS-SL-PUM-008-032-068.pdf>
+
+
+Velocites extraction inspired from:
+<https://help.marine.copernicus.eu/en/articles/9711615-how-to-plot-current-vectors-using-r>
+
+
+## Download Data from `Copernicusmarine` App
+
+- using `copernicusmarine.exe` File
+
+From: <https://help.marine.copernicus.eu/en/articles/10750437-copernicus-marine-toolbox-executable-no-installation>
+
+I recommend moving the file to this directory where this project is stored
+
+To start, open `cmd` or `PowerShell` from explorer. `cd` to location where `.exe`
+is located. Then run `copernicusmarine login` and enter "Username" and
+"Password". Once completed, you should be able to run the download
+
+
+
+
+variables:
+
+adt            - absolute dynamic topography [m]
+tpa_correction - instrument drift correction [m]
+flag_ice       - ice flag
+sla            - sea level anomaly [m]
+err_sla        - sea level anomaly error [m]
+
+u - eastward
+  ugos           - vector velocity [m/s]
+  ugosa          - vector velocity anomly [m/s]
+  err_ugosa      - vector velocity error [m/s]
+  
+v - northward
+  vgos           - vector velocity [m/s]
+  vgosa          - vector velocity anomly [m/s]
+  err_vgosa      - vector velocity error [m/s]
+
+
+# ---- Setup ----
+
+
+## Load Libraries
+
+```{r setup, include=FALSE}
+if (!nzchar(system.file(package = "librarian"))) 
+  install.packages("librarian")
+
+librarian::shelf(
+  quiet = TRUE,
+  librarian, conflicted, ggplot2, tibble, tidyr, readr, purrr, dplyr, stringr,
+  forcats, lubridate, glue, fs, magrittr, here,
+  
+  # additional
+)
+
+conflicts_prefer(
+  dplyr::filter(), 
+  dplyr::select()
+  )
+
+# set paths to downloaded data, ffmpeg, and animation
+path_save <- here("data", "raw", "copernicus")
+dir_create(path_save)
+
+source(here("R", "aviso_functions.R"))
+```
+
+
+### Setup Constants used in Download
+
+```{r download-aviso-setup}
+# set date range by month
+months <-
+  seq(as_date("2015-01-01"),
+      as_date("2024-12-31"),
+      by = "1 month")
+
+# path to executable and path to save data
+path_copernicusmarine <- here("copernicusmarine.exe")
+
+
+# set spatial extent
+aviso_bbox <-
+  c(
+    xmin = -83.8125,
+    xmax = -78.3125,
+    ymin = 22.8125,
+    ymax = 26.4375
+  )
+
+# select vars
+vars <-
+  c(
+    "adt",
+    "err_sla",
+    "err_ugosa",
+    "err_vgosa",
+    "flag_ice",
+    "sla",
+    "tpa_correction",
+    "ugos",
+    "ugosa",
+    "vgos",
+    "vgosa"
+  )
+
+cat("Date Range: ", format(months[c(1, length(months))], "%B %Y"), sep = "\n- ")
+
+```
+
+### Download AVISO+ Data
+
+```{r download-aviso}
+# set to TRUE if downloading data
+download <- FALSE
+# download <- TRUE
+
+# set to TRUE if want to overwrite previous data
+overwrite <- FALSE
+# overwrite <- TRUE
+
+aviso_download(
+  months, 
+  vars, 
+  bounds = aviso_bbox,
+  path_copernicusmarine,
+  path_save = here("~", "Box", "aviso_velocity", "data", "raw", "copernicus"),
+  download,
+  overwrite
+)
+
+```
+
+
+
