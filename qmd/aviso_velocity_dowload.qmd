@@ -16,7 +16,7 @@ data availability).
 A threshold of >= 0.5 m/s is used to determine the FC based on a Zhang et al., 2022.
 
 
-# ---- AVISO+ Sea Surface Height and Velocity ----
+## ---- AVISO+ Sea Surface Height and Velocity ----
 
 Data downloaded from `Copernicus` for both absolute dynamic topography (m) and
 north/east surface velocities (m/s)
@@ -98,11 +98,15 @@ conflicts_prefer(
   dplyr::select()
   )
 
+# source aviso functions
+source(here("R", "aviso_functions.R"))
+
 # set paths to downloaded data, ffmpeg, and animation
 path_save <- here("data", "raw", "copernicus")
 dir_create(path_save)
 
-source(here("R", "aviso_functions.R"))
+# path to executable and path to save data
+path_copernicusmarine <- here("copernicusmarine.exe")
 ```
 
 
@@ -114,10 +118,10 @@ months <-
   seq(as_date("2015-01-01"),
       as_date("2024-12-31"),
       by = "1 month")
-
-# path to executable and path to save data
-path_copernicusmarine <- here("copernicusmarine.exe")
-
+months <-
+  seq(as_date("2015-01-01"),
+      as_date("2015-01-31"),
+      by = "1 month")
 
 # set spatial extent
 aviso_bbox <-
@@ -164,7 +168,7 @@ aviso_download(
   vars, 
   bounds = aviso_bbox,
   path_copernicusmarine,
-  path_save = here("~", "Box", "aviso_velocity", "data", "raw", "copernicus"),
+  path_save = path_save,
   download,
   overwrite
 )
