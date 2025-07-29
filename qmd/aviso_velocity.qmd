@@ -1,0 +1,1054 @@
+---
+title: "AVISO+ Velocity Dataset"
+author: "Sebastian Di Geronimo"
+date: 2025-07-14
+format: html
+editor: source
+---
+
+# ---- Summary of Document ----
+
+Download AVISO+ data to get geostrophic velocities in the Florida Keys. The 
+geostrophic velocities can be used to estimate where the Florida Current (FC) is
+in relation to the coastline. The years used are 2015 - Nov 2024 (based on 
+data availability).
+
+A threshold of >= 0.5 m/s is used to determine the FC based on a Zhang et al., 2022.
+
+12 transects are added to determine the location of the FC based on the typical
+MBON/SFER cruise transects. These transects are as close as possible to the 
+various transects and are named after the `Line Names` inherent to them. Will
+need a `fknms_` metadata spreadsheet to get transect locations.
+- can be found in Box > mbon_imars_cruises > blank_sheets > pre_cruise_blank_sheets
+  - file: fknms_sample_logsheet_MM_YYYY_blank.xlsx
+
+To save videos per year:
+- need to have downloaded `ffmpeg` to animate vectors
+  - <https://www.gyan.dev/ffmpeg/builds/>
+  - then find the path to the *bin/ffmpeg.exe* in order to run the animation
+
+# ---- Setup ----
+
+
+## Load Libraries
+
+```{r setup, include=FALSE}
+if (!nzchar(system.file(package = "librarian"))) 
+  install.packages("librarian")
+
+librarian::shelf(
+  quiet = TRUE,
+  librarian, conflicted, ggplot2, tibble, tidyr, readr, purrr, dplyr, stringr,
+  forcats, lubridate, glue, fs, magrittr, here,
+  
+  # additional
+  gganimate, transformr
+)
+
+conflicts_prefer(
+  dplyr::filter(), 
+  dplyr::select(),
+  magrittr::extract()
+  )
+
+shelf(ggspatial, sf, ncdf4, stars, terra, geodist,)
+
+# set paths to downloaded data, ffmpeg, and animation
+path_save <- here("data", "raw", "copernicus")
+
+animate_save <- here("data", "plots", "animate")
+dir_create(animate_save)
+
+source(here("scripts", "aviso_functions.R"))
+```
+
+### Set `ffmpeg.exe` location 
+
+```{r cms-computer-location}
+if (Sys.getenv("USERNAME") == "sebastian15") {
+  # CMS computer
+  ffmpeg_path <- 
+    here(
+      "C:\\", "Users", "sebastian15", "AppData", "Roaming",
+      "ffmpeg-7.1.1-full_build", "bin", "ffmpeg.exe"
+    )
+} else if (Sys.getenv("USERNAME") == "spd19") {
+  # personal computer
+  ffmpeg_path <-
+    here(
+      "C:\\", "Program Files",
+      "ffmpeg-2025-07-12-git-35a6de137a-full_build", "bin",
+      "ffmpeg.exe"
+    )
+} else {
+  message("Select `ffmpeg.exe` file.")
+  ffmpeg_path <- rstudioapi::selectFile(
+    caption = "Select `ffmpeg.exe` file",
+    label   = "Select ffmpeg.exe")
+}
+```
+
+
+# ---- AVISO+ Sea Surface Height and Velocity ----
+
+Data downloaded from `Copernicus` for both absolute dynamic topography (m) and
+north/east surface velocities (m/s)
+
+Data:       Global Ocean Gridded L4 Sea Surface Heights And Derived Variables
+Search:     <https://data.marine.copernicus.eu/products>
+Product ID: `SEALEVEL_GLO_PHY_L4_MY_008_047`
+Dataset ID: `cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1D`
+Description: <https://data.marine.copernicus.eu/product/SEALEVEL_GLO_PHY_L4_MY_008_047/description>
+Bounds:     
+  Lon: -83.8125, -78.3125  
+  Lat:  22.8125,  26.4375
+Note: Select all data products when downloading from `MyOceanPro`
+      If downloading from `description` page, go to `Data access` then `subset`, 
+      then `automate`. Copy the `automate` and modify script below to download
+      multiple dates.
+
+Data Info:
+<https://documentation.marine.copernicus.eu/PUM/CMEMS-SL-PUM-008-032-068.pdf>
+
+
+Velocites extraction inspired from:
+<https://help.marine.copernicus.eu/en/articles/9711615-how-to-plot-current-vectors-using-r>
+
+
+## Download Data from `Copernicusmarine` App
+
+- using `copernicusmarine.exe` File
+
+From: <https://help.marine.copernicus.eu/en/articles/10750437-copernicus-marine-toolbox-executable-no-installation>
+
+I recommend moving the file to this directory where this project is stored
+
+To start, open `cmd` or `PowerShell` from explorer. `cd` to location where `.exe`
+is located. Then run `copernicusmarine login` and enter "Username" and
+"Password". Once completed, you should be able to run the download
+
+
+### Setup Constants used in Download
+
+variables:
+
+adt            - absolute dynamic topography [m]
+tpa_correction - instrument drift correction [m]
+flag_ice       - ice flag
+sla            - sea level anomaly [m]
+err_sla        - sea level anomaly error [m]
+
+u - eastward
+  ugos           - vector velocity [m/s]
+  ugosa          - vector velocity anomly [m/s]
+  err_ugosa      - vector velocity error [m/s]
+  
+v - northward
+  vgos           - vector velocity [m/s]
+  vgosa          - vector velocity anomly [m/s]
+  err_vgosa      - vector velocity error [m/s]
+
+```{r download-aviso-setup}
+if (FALSE) {
+  
+# set date range by month
+months <-
+  seq(as_date("2015-01-01"),
+      as_date("2024-12-31"),
+      by = "1 month")
+
+# path to executable and path to save data
+path_copernicusmarine <- here("copernicusmarine.exe")
+
+dir_create(path_save)
+
+# set spatial extent
+aviso_bbox <-
+  c(
+    xmin = -83.8125,
+    xmax = -78.3125,
+    ymin = 22.8125,
+    ymax = 26.4375
+  )
+
+# select vars
+vars <-
+  c(
+    "adt",
+    "err_sla",
+    "err_ugosa",
+    "err_vgosa",
+    "flag_ice",
+    "sla",
+    "tpa_correction",
+    "ugos",
+    "ugosa",
+    "vgos",
+    "vgosa"
+  )
+
+cat("Date Range: ", format(months[c(1, length(months))], "%B %Y"), sep = "\n- ")
+}
+```
+
+### Download AVISO+ Data
+
+```{r download-aviso}
+if (FALSE) {
+  
+# set to TRUE if downloading data
+download <- FALSE
+# download <- TRUE
+
+# set to TRUE if want to overwrite previous data
+overwrite <- FALSE
+# overwrite <- TRUE
+
+aviso_download(
+  months, 
+  vars, 
+  bounds = aviso_bbox,
+  path_copernicusmarine,
+  path_save = here("~", "Box", "aviso_velocity", "data", "raw", "copernicus"),
+  download,
+  overwrite
+)
+}
+```
+
+
+
+# ---- Multiday Plots ----
+
+## Load Muliple Dates
+
+If there are multiple time dimensions, will load each date into its own list
+
+```{r path-multi}
+# aviso_path <-
+#   here::here("data", "raw") %>%
+#   rstudioapi::selectFile(path = .)
+
+aviso_path_full <-
+  # here::here("data", "raw") %>%
+  here("~", "Box", "aviso_velocity", "data", "raw", "copernicus") %>%
+  # rstudioapi::selectDirectory(path = .) %>%
+  dir_ls(regexp = "mems_obs-sl_glo")
+
+time_to_run <- "2016"
+
+aviso_path <-
+  aviso_path_full %>%
+  Filter(\(.x) str_detect(.x, time_to_run), .) %>%
+  .[] %T>% 
+  {
+    .[] %>%
+    str_extract("(\\d{4}-.*)\\.nc", group = 1) %>%
+    print()
+  }
+```
+
+```{r load-multi}
+skip_dates <- 1
+aviso_days <- aviso_load(aviso_path, .by = skip_dates)
+
+aviso_grid_tibble <- aviso_days$tibble
+dat_grid          <- aviso_days$gridded
+  
+aviso_grid_tibble %>%
+  distinct(date)
+
+rm(aviso_days)
+```
+
+## Create Multi-day Raster
+
+```{r create-raster}
+multi_rast <- 
+  unname(dat_grid) %>%
+  lapply(.,\(.x) rast(.x, crs = "EPSG:4326")) %>%
+  rast()
+multi_rast
+
+extents <- ext(multi_rast)
+ylim    <- extents[3:4]
+xlim    <- extents[1:2]
+
+# load coastline
+coast <-
+  rnaturalearth::ne_coastline(10, returnclass = "sf") %>%
+  st_crop(
+    xmin = xlim[1][[1]],
+    ymin = ylim[1][[1]],
+    xmax = xlim[2][[1]],
+    ymax = ylim[2][[1]],
+  )
+coast
+
+rm(extents)
+```
+
+# Create Transects
+
+```{r edit-transects}
+transect_file <- here(path_save, "..", "transects2.shp")
+
+# stations_path <- rstudioapi::selectFile() 
+stations_path <- 
+  here("data", "raw") %>%
+  dir_ls(regexp = "fknms")
+station_sht   <- readxl::excel_sheets(stations_path) 
+station       <- 
+  readxl::read_excel(
+    stations_path, 
+    station_sht[9], 
+    .name_repair = janitor::make_clean_names
+  ) %>%
+  filter(str_detect(geo_loc_name, "(?i)florida keys") & !str_detect(line_id, "PL")) %>%
+  select(station_id, station_class, "lon" = mean_lon, "lat" = mean_lat, line_id)
+
+if (file_exists(transect_file)) {
+  message("Reading transects shapefile")
+  linestring <- st_read(transect_file)
+} else {
+  
+  message("Creating transects.")
+  lyr_name <- grep("vel_mag", names(multi_rast), value = TRUE)[1]
+  
+  polyline <-
+    ((mapview::mapView(multi_rast, layer = lyr_name) +
+      mapview::mapview(coast)) +
+      mapview::mapview(station, xcol = "lon", ycol = "lat")
+    ) %>%
+    mapedit::editMap()
+
+  linestring <- polyline$finished
+
+  names(linestring) <- c("id", "type", "geometry")
+
+  message(paste0("Saving transects as `", basename(transect_file), "`."))
+  
+  st_write(
+    linestring,
+    transect_file
+  )
+}
+
+# if need to edit the `linestring` object
+if (FALSE) {
+  linestring <-
+    mapview::mapview(linestring) %>%
+    mapedit::editMap("linestring")
+  
+  # select specific lines
+  mapedit::selectFeatures(linestring)
+  #   st_write(
+  #   linestring,
+  #   transect_file
+  # )
+}
+
+```
+
+
+## Extract Pixels along Transects
+
+```{r extract-along-transect}
+n_layers <- nlyr(multi_rast) / length(dat_grid)
+
+rast_names <- 
+  names(dat_grid) %>% 
+  rep(each = n_layers) %>% 
+  as_date()
+
+time(multi_rast)  <- rast_names
+names(multi_rast) <- paste(names(multi_rast), rast_names, sep = "_")
+
+
+vel_ext_transect <- 
+ terra::extract(multi_rast, linestring, xy = TRUE) %>%
+ select(ID, x , y, contains("vel_mag")) %>%
+  pivot_longer(
+    cols      = c(-ID, -x, -y),     # columns to pivot long,
+    names_to  = "name",  # desired name for category column
+    values_to = "vel_mag", # desired name for value column
+    ) %>%
+  mutate(
+    date = str_extract(name, "\\d.*"),
+    date2 = as_date(date)
+  ) %T>% 
+  print()
+```
+
+# ---- Extract Distance from Shore ----
+
+```{r distance-from-shore}
+# extract starting point of each transect
+polyline_pts <- 
+  linestring %>% 
+  st_coordinates() %>%
+  as_tibble(.name_repair = janitor::make_clean_names) %>%
+  slice_head(by = l1) %T>% 
+  print()
+
+left_join(
+  polyline_pts,
+  
+  # extract first value along transect >0.5 m/s
+  filter(vel_ext_transect, vel_mag >= 0.5) %>%
+    slice_head(by = c(ID, date)),
+  
+  by = c("l1" = "ID"),
+  suffix = c("_shr", "_fc")
+  ) %>%
+  rowwise() %>%
+  mutate(
+    dist = geodist_vec(
+      x_shr, y_shr, 
+      x_fc, y_fc, 
+      measure = "geodesic") / 1000
+    ) %>%
+  ungroup()
+```
+
+
+```{r distance-from-shore}
+dist_from_shore <-
+  left_join(
+    polyline_pts,
+
+    # extract first value along transect >0.5 m/s
+    vel_ext_transect,
+    # filter(vel_ext_transect, vel_mag >= 0.5),
+    by = c("l1" = "ID"),
+    suffix = c("_shr", "_fc")
+  ) %>%
+  rowwise() %>%
+  mutate(
+    dist = geodist_vec(
+      x_shr, y_shr,
+      x_fc, y_fc,
+      measure = "geodesic",
+      paired = TRUE
+    ) / 1000
+  ) %>%
+  ungroup() %T>%
+  print()
+
+dist_from_shore %>%
+  # extract first value along transect >0.5 m/s
+  filter(vel_mag >= 0.5) %>%
+  filter(.by = c(date2, l1), dist == min(dist))
+
+```
+
+
+# ---- Plots ----
+
+```{r set-file-suffix}
+date_suffix <- 
+  c(first(rast_names), last(rast_names)) %>%
+  paste0("_", skip_dates, collapse = "_") %T>% 
+  print()
+```
+
+TODO: try this method to show distance from shore
+<https://stackoverflow.com/questions/71473958/how-to-keep-points-in-gganimate-after-each-frame-is-rendered>
+
+```{r add-line_names}
+transect_names <-   
+  c("MQ", arrange(station, lon)  %>%
+   distinct(line_id) %>%
+   pull(1)
+   ) %>%
+  tibble(line_name = .) %>%
+  add_row(.after = 9, tibble(line_name = "MR2")) %>%
+  mutate(
+    rows      = row_number(),
+    line_name = fct_inorder(line_name)
+    )
+
+dist_from_shore2 <- 
+  left_join(
+    x  = dist_from_shore,
+    y  = transect_names,
+    by = c("l1" = "rows")
+  ) %>%
+  relocate(line_name, .after = l1) %T>% 
+  print()
+
+dist_fc <- 
+  dist_from_shore2 %>%
+  # extract first value along transect >0.5 m/s
+  filter(vel_mag >= 0.5) %>%
+  filter(.by = c(date2, line_name), dist == min(dist))
+
+dir_create(here("data", "processed"))
+
+dist_from_shore2 %>% 
+  select(
+    line_name,
+    "shore_lon_dd"      = x_shr,
+    "shore_lat_dd"      = y_shr,
+    "fl_current_lon_dd" = x_fc,
+    "fl_current_lat_dd" = y_fc,
+    "velocity"          = vel_mag,
+    "date"              = date2,
+    "distance_km"       = dist
+  ) %>% 
+  arrange(date)%>% 
+  write_csv(
+    here("data", "processed", glue("dist_above_5_{date_suffix}.csv")),
+    na = ""
+    )
+
+dist_fc %>% 
+  select(
+    line_name,
+    "shore_lon_dd"      = x_shr,
+    "shore_lat_dd"      = y_shr,
+    "fl_current_lon_dd" = x_fc,
+    "fl_current_lat_dd" = y_fc,
+    "velocity"          = vel_mag,
+    "date"              = date2,
+    "distance_km"       = dist
+  ) %>% 
+  arrange(date) %>% 
+  write_csv(
+  here("data", "processed", glue("fc_dist_{date_suffix}.csv")),
+  na = ""
+  )
+```
+
+
+```{r}
+test2 <- 
+  dist_from_shore2 %>%
+  mutate(
+    months = format(date2, "%B %Y"),
+    months = my(months),
+         ) %>%
+  summarise(
+    .by = c(months, l1, line_name, dist),
+    vel_mag = mean(vel_mag, na.rm = TRUE)
+  ) 
+
+dist_from_shore2 %>%
+  mutate(
+    months = format(date2, "%B %Y"),
+    months = my(months)
+    ) %>% 
+  ggplot(aes(x = dist, y = vel_mag, color = date)) +
+  geom_hline(yintercept = 0.5, color = "red") +
+  geom_path(show.legend = FALSE) +
+  geom_point(show.legend = FALSE) +
+  geom_path(data = test2,  color = "black", show.legend = FALSE) +
+  geom_point(data = test2, color = "black",  show.legend = FALSE) +
+  labs(
+    x = "Distance from Shore (km)", 
+    y = expression("Velocity"~(m~s^-1)),
+    color = "ID"
+    ) +
+  coord_cartesian(expand = FALSE) +
+  theme_bw() +
+  facet_grid(months ~ line_name)
+```
+
+
+```{r trasect-view}
+if (FALSE) {
+  
+trasect_plt <- 
+  dist_from_shore2 %>%
+  filter(between(date2, first(date2), first(date2) + days(1))) %>%
+  ggplot(aes(x = dist, y = vel_mag, color = as.factor(line_name))) +
+  geom_hline(yintercept = 0.5, color = "red") +
+  geom_path() +
+  geom_point(size = 1) +
+  labs(
+    x = "Distance from Shore (km)", 
+    y = expression("Velocity"~(m~s^-1)),
+    color = "ID"
+    ) +
+  coord_cartesian(expand = FALSE) +
+  theme_bw() +
+  facet_wrap(~line_name) +
+  theme(
+    text            = element_text(size = 2),
+    legend.key.size = unit(0.25, "cm"),
+    legend.key.spacing = unit(0.05, "cm"),
+    legend.position = "bottom",
+    legend.margin   = margin(t = -10),
+    axis.text       = element_blank(),
+    axis.ticks      = element_blank()
+    ) +
+  guides(colour = "none") +
+  gganimate::transition_time(date2) +
+  labs(title = "Date: {frame_time}")
+
+if (FALSE) {
+  anim_save(
+    # file      = glue("trasect_plot4_{date_suffix}.mp4"),
+    file      = glue("trasect_plot_2015.mp4"),
+    animation = trasect_plt,
+    path      = animate_save,
+    renderer  = ffmpeg_renderer(format = "mp4", ffmpeg = ffmpeg_path),
+    
+    height  = 800,
+    width   = 800,
+    res     = 300
+    # nframes = nlyr(multi_rast),
+    # fps     = 20
+  )
+}
+}
+```
+
+For `vel_vect`, may want to have more vectors along keys so instead of filtering
+for every `slice_by`, should include a polygon to keep?
+
+```{r vars-plt-mag-vel-vectors}
+slice_by      <- 5
+length_divide <- 2
+filt <- 
+  . %>% 
+  filter()
+  # filter(date == first(date))
+
+aviso_tile <- aviso_grid_tibble %>% filt
+pts_lt   <- filter(vel_ext_transect, vel_mag < 0.5) %>% filt
+pts_gt   <- filter(vel_ext_transect, vel_mag >= 0.5) %>% filt
+vel_vect <- slice(aviso_grid_tibble, seq(1, n(), by = slice_by)) %>% filt
+```
+
+
+```{r mag-vel-vectors}
+plt_mag_vel_vect <-
+  ggplot() +
+  
+  # velocity pixels
+  geom_tile(data = aviso_tile, aes(x = lon, y = lat, fill = vel_mag)) +
+
+  # coast
+  geom_sf(data = coast) +
+  
+  # velocity vectors
+  geom_segment(
+    data = vel_vect,
+    aes(
+      x     = lon, 
+      xend  = lon + ugos/length_divide, 
+      y     = lat, 
+      yend  = lat + vgos/length_divide, 
+      color = vel_mag
+      ),
+    arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
+    linewidth = 0.25,                              # adjust arrow thickness
+    na.rm     = TRUE
+  ) +
+
+  # transects
+  geom_sf(data = linestring, color = "red")  +
+
+  # less than 0.5 m/s
+  geom_point(data = pts_lt,
+             aes(x = x,  y = y),
+             color = "blue",
+             size  = 0.5) +
+
+  # greater than 0.5 m/s
+  geom_point(data = pts_gt,
+             aes(x = x,  y = y),
+             color = "green",
+             size  = 0.5) +
+  
+  # styling
+  labs(x = NULL, y = NULL,
+       color = expression("Velocity"~(m~s^-1)),
+       fill = expression("Velocity"~(m~s^-1))) +
+  coord_sf(expand = FALSE, ylim = ylim, xlim = xlim) +
+  scale_fill_viridis_b() +
+  scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
+  # facet_wrap(~date)
+  theme_bw() +
+  theme(
+    legend.key.size = unit(0.25, "cm"),
+    text = element_text(size = 4),
+    legend.position = "bottom",
+    legend.margin = margin(t = -10),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+    ) +
+  
+  gganimate::transition_states(date, transition_length = 0) +
+  labs(title = "Date: {closest_state}")
+
+# save animation
+tictoc::tic()
+anim_save(
+  file      = glue("mag_vel_vect2_{date_suffix}.mp4"), 
+  animation = plt_mag_vel_vect, 
+  path      = animate_save, 
+  renderer  = ffmpeg_renderer(format = "mp4", ffmpeg = ffmpeg_path), 
+  height = 800, 
+  width  = 800,
+  res    = 300,
+  
+  # duration = 1,
+  nframes  = nlyr(multi_rast),
+  # fps      = 20
+  )
+tictoc::toc()
+
+for (i in 1:2) {
+  beepr::beep(8)
+
+  Sys.sleep(20)
+}
+```
+
+
+```{r}
+year_to_run <- "2021"
+```
+
+
+
+# ---- Create Polygon ----
+
+```{r edit-transects}
+transect_file <- here(path_save, "..", "fl_keys_polygon.shp")
+
+# stations_path <- rstudioapi::selectFile() 
+stations_path <- 
+  here("data", "raw") %>%
+  dir_ls(regexp = "fknms")
+station_sht   <- readxl::excel_sheets(stations_path) 
+station       <- 
+  readxl::read_excel(
+    stations_path, 
+    station_sht[9], 
+    .name_repair = janitor::make_clean_names
+  ) %>%
+  filter(str_detect(geo_loc_name, "(?i)florida keys") & !str_detect(line_id, "PL")) %>%
+  select(station_id, station_class, "lon" = mean_lon, "lat" = mean_lat, line_id)
+
+if (file_exists(transect_file)) {
+  message("Reading transects shapefile")
+  linestring <- st_read(transect_file)
+} else {
+  
+  message("Creating transects.")
+  lyr_name <- grep("vel_mag", names(multi_rast), value = TRUE)[1]
+  
+  fl_polygon <-
+    ((mapview::mapView(multi_rast, layer = lyr_name) +
+      mapview::mapview(coast)) +
+      mapview::mapview(station, xcol = "lon", ycol = "lat")
+    ) %>%
+    mapedit::editMap()
+
+  fl_keys_poly <- fl_polygon$finished
+
+  names(fl_keys_poly) <- c("id", "type", "geometry")
+
+  message(paste0("Saving transects as `", basename(transect_file), "`."))
+  
+  st_write(
+    fl_keys_poly,
+    transect_file
+  )
+}
+```
+
+```{r}
+plot(fl_keys_poly)
+test2 <-
+  aviso_grid_tibble %>%
+  filter(date == first(date)) %>%
+  st_as_sf(coords = c("lon", "lat"), remove = FALSE) %>%
+  st_set_crs(st_crs(4326)) %>%
+  st_crop(fl_keys_poly) %>%
+  as_tibble()
+
+test <-
+  multi_rast %>%
+  terra::subset(1:4) %>%
+  mask(fl_keys_poly) %>%
+  tidyterra::as_tibble(xy = TRUE) %>%
+  rename("lon" = x, "lat" = y, "adt" = 3, "vgos" = 4, "ugos" = 5, "vel_mag" = 6)
+
+test2 <-
+  multi_rast %>%
+  terra::subset(1:4) %>%
+  mask(fl_keys_poly, inverse = TRUE) %>%
+  tidyterra::as_tibble(xy = TRUE) %>%
+  rename("lon" = x, "lat" = y, "adt" = 3, "vgos" = 4, "ugos" = 5, "vel_mag" = 6) %>%
+  slice(seq(1, n(), by = slice_by))
+
+ ggplot() +
+  
+  # velocity pixels
+  # geom_sf(data = test2)
+  geom_tile(data = test2, aes(x = lon, y = lat, fill = vel_mag),
+            na.rm = TRUE) +
+  geom_tile(data = test, aes(x = lon, y = lat, fill = vel_mag),
+            na.rm = TRUE) +
+
+  # coast
+  geom_sf(data = coast) +
+  geom_sf(data = fl_keys_poly, fill = NA) +
+  # velocity vectors
+  geom_segment(
+    data = test,
+    aes(
+      x     = lon, 
+      xend  = lon + ugos/length_divide, 
+      y     = lat, 
+      yend  = lat + vgos/length_divide, 
+      color = vel_mag
+      ),
+    arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
+    linewidth = 0.25,                              # adjust arrow thickness
+    na.rm     = TRUE
+  ) +
+  geom_segment(
+    data = test2,
+    aes(
+      x     = lon, 
+      xend  = lon + ugos/length_divide, 
+      y     = lat, 
+      yend  = lat + vgos/length_divide, 
+      color = vel_mag
+      ),
+    arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
+    linewidth = 0.25,                              # adjust arrow thickness
+    na.rm     = TRUE
+  ) +
+
+  # transects
+  geom_sf(data = linestring, color = "red")  +
+
+  # less than 0.5 m/s
+  geom_point(data = filter(pts_lt, date == first(date)),
+             aes(x = x,  y = y),
+             color = "blue",
+             size  = 0.5) +
+
+  # greater than 0.5 m/s
+  geom_point(data = filter(pts_gt, date == first(date)),
+             aes(x = x,  y = y),
+             color = "green",
+             size  = 0.5) +
+     # styling
+  labs(x = NULL, y = NULL,
+       color = expression("Velocity"~(m~s^-1)),
+       fill = expression("Velocity"~(m~s^-1))) +
+  coord_sf(expand = FALSE, ylim = ylim, xlim = xlim) +
+  scale_fill_viridis_b(na.value = NA) +
+  scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
+  theme_bw()
+  
+  
+```
+
+
+
+
+
+# Create Transects along Shelf
+
+```{r edit-transects}
+transect_file <- here(path_save, "..", "transects_along.shp")
+
+# stations_path <- rstudioapi::selectFile() 
+stations_path <- 
+  here("data", "raw") %>%
+  dir_ls(regexp = "fknms")
+station_sht   <- readxl::excel_sheets(stations_path) 
+station       <- 
+  readxl::read_excel(
+    stations_path, 
+    station_sht[9], 
+    .name_repair = janitor::make_clean_names
+  ) %>%
+  filter(str_detect(geo_loc_name, "(?i)florida keys") & !str_detect(line_id, "PL")) %>%
+  select(station_id, station_class, "lon" = mean_lon, "lat" = mean_lat, line_id)
+
+if (file_exists(transect_file)) {
+  message("Reading transects shapefile")
+  linestring <- st_read(transect_file)
+} else {
+  
+  message("Creating transects.")
+  lyr_name <- grep("vel_mag", names(multi_rast), value = TRUE)[1]
+  
+  polyline <-
+    ((mapview::mapView(multi_rast, layer = lyr_name) +
+      mapview::mapview(coast)) +
+      mapview::mapview(station, xcol = "lon", ycol = "lat")
+    ) %>%
+    mapedit::editMap()
+
+  linestring <- polyline$finished
+
+  names(linestring) <- c("id", "type", "geometry")
+
+  message(paste0("Saving transects as `", basename(transect_file), "`."))
+  
+  st_write(
+    linestring,
+    transect_file
+  )
+}
+
+# if need to edit the `linestring` object
+if (FALSE) {
+  linestring <-
+    mapview::mapview(linestring) %>%
+    mapedit::editMap("linestring")
+  
+  # select specific lines
+  mapedit::selectFeatures(linestring)
+  #   st_write(
+  #   linestring,
+  #   transect_file
+  # )
+}
+
+```
+
+
+```{r extract-along-transect}
+n_layers <- nlyr(multi_rast) / length(dat_grid)
+
+rast_names <- 
+  names(dat_grid) %>% 
+  rep(each = n_layers) %>% 
+  as_date()
+
+time(multi_rast)  <- rast_names
+names(multi_rast) <- paste(names(multi_rast), rast_names, sep = "_")
+
+
+vel_ext_transect <- 
+ terra::extract(multi_rast, linestring, xy = TRUE) %>%
+ select(ID, "lon" = x , "lat" = y, contains(c("vel_mag", "gos"))) %>%
+  pivot_longer(
+    cols      = c(-ID, -lon, -lat),     # columns to pivot long,
+    names_to  = "name",  # desired name for category column
+    values_to = "vel_mag", # desired name for value column
+    ) %>%
+  mutate(
+    date = str_extract(name, "\\d.*"),
+    date2 = as_date(date),
+    name = str_remove(name, "_\\d{4}.*")
+  ) %>%
+  pivot_wider(
+    data         = .,
+    # id_cols      = c(), # *optional* vector of unaffected columns,
+    names_from   = c(name), # category column(s) to pivot wide
+    values_from  = c(vel_mag), # value column(s) that hold data for each category column
+    names_sep    = "_",
+    names_repair = janitor::make_clean_names
+    ) %T>% 
+  print()
+```
+
+
+```{r}
+vel_ext_transect %>%
+  filter(date2 == sample(date2, 1)) %>%
+  
+  ggplot() +
+  # coast
+  geom_sf(data = coast) +
+  # geom_line(aes(x = lon, y = lat)) +
+   # transects
+  geom_sf(data = linestring, color = "red")  +
+  
+  
+  # velocity vectors
+  geom_segment(
+    # data = vel_vect,
+    aes(
+      x     = lon, 
+      xend  = lon + ugos/length_divide, 
+      y     = lat, 
+      yend  = lat + vgos/length_divide, 
+      color = vel_mag
+      ),
+    arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
+    linewidth = 0.25,                              # adjust arrow thickness
+    na.rm     = TRUE
+  ) +
+  labs(x = NULL, y = NULL) +
+  scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
+  coord_sf(ylim = c(24,26), xlim = c(-82, -80)) +
+  theme_bw()
+```
+
+
+```{r}
+vel_ext_transect %>%
+  filter(between(date2, first(date2), first(date2) + 5)) %>%
+  ggplot() +
+ 
+  # velocity vectors
+  geom_segment(
+    # data = vel_vect,
+    aes(
+      x     = lon, 
+      xend  = lon + ugos/length_divide, 
+      y     = 0, 
+      yend  = vgos/length_divide, 
+      color = vel_mag
+      ),
+    arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
+    linewidth = 0.25,                              # adjust arrow thickness
+    na.rm     = TRUE
+  ) +
+  coord_cartesian(expand = FALSE) +
+  facet_wrap(~date2) +
+  scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
+
+  # coord_sf(ylim = c(24,26), xlim = c(-82, -80)) +
+  theme_bw()
+
+date_filt <- 
+  vel_ext_transect %>%
+  filter(ugos < 0 ) %>%
+  distinct(date2)
+
+
+vel_ext_transect %>%
+  filter(date2 %in% date_filt$date2) %>%
+  filter(date2 %in% sample(date_filt$date2, 6)) %>%
+  arrange(date2) %>%
+  # filter(between(date2, first(date2), first(date2) + 5)) %>%
+  ggplot() +
+ 
+  # velocity vectors
+  geom_segment(
+    # data = vel_vect,
+    aes(
+      x     = lon, 
+      xend  = lon + ugos/length_divide, 
+      y     = 0, 
+      yend  = vgos/length_divide, 
+      color = vel_mag
+      ),
+    arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
+    linewidth = 0.25,                              # adjust arrow thickness
+    na.rm     = TRUE
+  ) +
+  labs(x = NULL, y = expression("Velocity"~(m~s^-1)), color = "Magnitude") +
+  coord_cartesian(expand = FALSE) +
+  facet_wrap(~date2) +
+  scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
+
+  # coord_sf(ylim = c(24,26), xlim = c(-82, -80)) +
+  theme_bw()
+
+```
+
