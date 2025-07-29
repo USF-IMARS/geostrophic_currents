@@ -22,7 +22,7 @@ aviso_velocity
 # AVISO+ Sea Surface Height and Velocity
 
 Data downloaded from `Copernicus` for both absolute dynamic topography (m) and
-north/east surface velocities (m/s)
+north/east surface velocities (m/s). **NOTE**: you will need a copernicus login to proceed.
 
 Data:       Global Ocean Gridded L4 Sea Surface Heights And Derived Variables
 
