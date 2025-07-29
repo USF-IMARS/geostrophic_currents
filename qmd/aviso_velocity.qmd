@@ -27,67 +27,6 @@ To save videos per year:
   - <https://www.gyan.dev/ffmpeg/builds/>
   - then find the path to the *bin/ffmpeg.exe* in order to run the animation
 
-# ---- Setup ----
-
-
-## Load Libraries
-
-```{r setup, include=FALSE}
-if (!nzchar(system.file(package = "librarian"))) 
-  install.packages("librarian")
-
-librarian::shelf(
-  quiet = TRUE,
-  librarian, conflicted, ggplot2, tibble, tidyr, readr, purrr, dplyr, stringr,
-  forcats, lubridate, glue, fs, magrittr, here,
-  
-  # additional
-  gganimate, transformr
-)
-
-conflicts_prefer(
-  dplyr::filter(), 
-  dplyr::select(),
-  magrittr::extract()
-  )
-
-shelf(ggspatial, sf, ncdf4, stars, terra, geodist,)
-
-# set paths to downloaded data, ffmpeg, and animation
-path_save <- here("data", "raw", "copernicus")
-
-animate_save <- here("data", "plots", "animate")
-dir_create(animate_save)
-
-source(here("scripts", "aviso_functions.R"))
-```
-
-### Set `ffmpeg.exe` location 
-
-```{r cms-computer-location}
-if (Sys.getenv("USERNAME") == "sebastian15") {
-  # CMS computer
-  ffmpeg_path <- 
-    here(
-      "C:\\", "Users", "sebastian15", "AppData", "Roaming",
-      "ffmpeg-7.1.1-full_build", "bin", "ffmpeg.exe"
-    )
-} else if (Sys.getenv("USERNAME") == "spd19") {
-  # personal computer
-  ffmpeg_path <-
-    here(
-      "C:\\", "Program Files",
-      "ffmpeg-2025-07-12-git-35a6de137a-full_build", "bin",
-      "ffmpeg.exe"
-    )
-} else {
-  message("Select `ffmpeg.exe` file.")
-  ffmpeg_path <- rstudioapi::selectFile(
-    caption = "Select `ffmpeg.exe` file",
-    label   = "Select ffmpeg.exe")
-}
-```
-
 
 # ---- AVISO+ Sea Surface Height and Velocity ----
 
@@ -128,8 +67,6 @@ is located. Then run `copernicusmarine login` and enter "Username" and
 "Password". Once completed, you should be able to run the download
 
 
-### Setup Constants used in Download
-
 variables:
 
 adt            - absolute dynamic topography [m]
@@ -148,98 +85,102 @@ v - northward
   vgosa          - vector velocity anomly [m/s]
   err_vgosa      - vector velocity error [m/s]
 
-```{r download-aviso-setup}
-if (FALSE) {
+
+
+
+# ---- Setup ----
+
+
+## Load Libraries
+
+```{r setup, include=FALSE}
+if (!nzchar(system.file(package = "librarian"))) 
+  install.packages("librarian")
+
+librarian::shelf(
+  quiet = TRUE,
+  librarian, conflicted, ggplot2, tibble, tidyr, readr, purrr, dplyr, stringr,
+  forcats, lubridate, glue, fs, magrittr, here,
   
-# set date range by month
-months <-
-  seq(as_date("2015-01-01"),
-      as_date("2024-12-31"),
-      by = "1 month")
-
-# path to executable and path to save data
-path_copernicusmarine <- here("copernicusmarine.exe")
-
-dir_create(path_save)
-
-# set spatial extent
-aviso_bbox <-
-  c(
-    xmin = -83.8125,
-    xmax = -78.3125,
-    ymin = 22.8125,
-    ymax = 26.4375
-  )
-
-# select vars
-vars <-
-  c(
-    "adt",
-    "err_sla",
-    "err_ugosa",
-    "err_vgosa",
-    "flag_ice",
-    "sla",
-    "tpa_correction",
-    "ugos",
-    "ugosa",
-    "vgos",
-    "vgosa"
-  )
-
-cat("Date Range: ", format(months[c(1, length(months))], "%B %Y"), sep = "\n- ")
-}
-```
-
-### Download AVISO+ Data
-
-```{r download-aviso}
-if (FALSE) {
-  
-# set to TRUE if downloading data
-download <- FALSE
-# download <- TRUE
-
-# set to TRUE if want to overwrite previous data
-overwrite <- FALSE
-# overwrite <- TRUE
-
-aviso_download(
-  months, 
-  vars, 
-  bounds = aviso_bbox,
-  path_copernicusmarine,
-  path_save = here("~", "Box", "aviso_velocity", "data", "raw", "copernicus"),
-  download,
-  overwrite
+  # additional
+  gganimate, transformr
 )
+
+conflicts_prefer(
+  dplyr::filter(), 
+  dplyr::select(),
+  magrittr::extract()
+  )
+
+shelf(ggspatial, sf, ncdf4, stars, terra, geodist, mapview, mapedit, 
+      rnaturalearth
+      )
+
+# set paths to save shapefiles, and animations
+shp_save <- here("data", "raw", "shapefiles")
+dir_create(shp_save)
+
+animate_save <- here("data", "plots", "animate")
+dir_create(animate_save)
+
+source(here("R", "aviso_functions.R"))
+```
+
+### Set `ffmpeg.exe` Location 
+
+To save animations using `ffmpeg`, will need to download a compiled version
+- need to have downloaded `ffmpeg` to animate vectors
+  - from: <https://www.gyan.dev/ffmpeg/builds/>
+  - then find the path to the *bin/ffmpeg.exe* in order to run the animations
+
+```{r ffmpeg-location}
+if (!exists("ffmpeg_path") & interactive()) {
+  message("Select `ffmpeg.exe` file.")
+  ffmpeg_path <- rstudioapi::selectFile(
+    caption = "Select `ffmpeg.exe` file",
+    label   = "Select ffmpeg.exe")
+} 
+
+ffmpeg_path <- eval(ffmpeg_path) %T>% 
+  print()
+
+# optionally save path in .Rprofile
+if (FALSE) {
+  shelf(usethis)
+  usethis::edit_r_profile(scope = "project")
 }
 ```
 
 
 
-# ---- Multiday Plots ----
+# ---- Load AVISO+ Data ----
 
 ## Load Muliple Dates
 
 If there are multiple time dimensions, will load each date into its own list
 
+### Paths to AVISO+ Data
+
 ```{r path-multi}
-# aviso_path <-
-#   here::here("data", "raw") %>%
-#   rstudioapi::selectFile(path = .)
+if (!exists("aviso_path") & interactive()) {
+  aviso_path <-
+    here::here("data") %>%
+    rstudioapi::selectFile(path = .)
+}
+
+aviso_path <- eval(aviso_path)
 
 aviso_path_full <-
-  # here::here("data", "raw") %>%
-  here("~", "Box", "aviso_velocity", "data", "raw", "copernicus") %>%
-  # rstudioapi::selectDirectory(path = .) %>%
+  aviso_path %>%
   dir_ls(regexp = "mems_obs-sl_glo")
 
-time_to_run <- "2016"
+# set year(s) to load data
+# if multiple separate with `|`
+year_to_load <- "2016-01-01"
 
 aviso_path <-
   aviso_path_full %>%
-  Filter(\(.x) str_detect(.x, time_to_run), .) %>%
+  Filter(\(.x) str_detect(.x, year_to_load), .) %>%
   .[] %T>% 
   {
     .[] %>%
@@ -248,20 +189,37 @@ aviso_path <-
   }
 ```
 
+### Load AVISO+ Data
+
+Each day is loaded individually and the geostrophic currents (ugos and vgos) and 
+absolute dynamic topography (adt) are loaded for each day and are combined.
+
+Velocity (m/s) is calculated by: $ mag = \sqrt{ugos^2 + vgos^2} $
+
 ```{r load-multi}
-skip_dates <- 1
+# number of days to skip to reduce data size
+skip_dates <- 10
+
+# load aviso data
 aviso_days <- aviso_load(aviso_path, .by = skip_dates)
 
+# extract tibble and gridded data
 aviso_grid_tibble <- aviso_days$tibble
 dat_grid          <- aviso_days$gridded
   
+# print the dates loaded
 aviso_grid_tibble %>%
   distinct(date)
 
 rm(aviso_days)
 ```
 
-## Create Multi-day Raster
+## Convert to Multi-day Raster
+
+First, grids are converted to lists of rasters then combined to form a raster
+cube.
+
+The bounding box is extracted and used to load the coastline.
 
 ```{r create-raster}
 multi_rast <- 
@@ -288,20 +246,28 @@ coast
 rm(extents)
 ```
 
-# Create Transects
 
-```{r edit-transects}
-transect_file <- here(path_save, "..", "transects2.shp")
+# ---- Create Transects ----
 
-# stations_path <- rstudioapi::selectFile() 
-stations_path <- 
+This is created manually upon first instance if `transect2.shp` doesn't exist.
+
+The points from the SFER/MBON cruise are load and the Florida Keys locations
+are extracted. Then manual creation of transects are done. 
+
+
+```{r create-load-transects}
+transect_file <- here(shp_save, "transects2.shp")
+
+stations_path <-
   here("data", "raw") %>%
-  dir_ls(regexp = "fknms")
-station_sht   <- readxl::excel_sheets(stations_path) 
-station       <- 
+  dir_ls(regexp = "stations")
+
+station_sht <- readxl::excel_sheets(stations_path)
+
+station <-
   readxl::read_excel(
-    stations_path, 
-    station_sht[9], 
+    stations_path,
+    station_sht[9],
     .name_repair = janitor::make_clean_names
   ) %>%
   filter(str_detect(geo_loc_name, "(?i)florida keys") & !str_detect(line_id, "PL")) %>%
@@ -314,7 +280,7 @@ if (file_exists(transect_file)) {
   
   message("Creating transects.")
   lyr_name <- grep("vel_mag", names(multi_rast), value = TRUE)[1]
-  
+
   polyline <-
     ((mapview::mapView(multi_rast, layer = lyr_name) +
       mapview::mapview(coast)) +
@@ -327,25 +293,27 @@ if (file_exists(transect_file)) {
   names(linestring) <- c("id", "type", "geometry")
 
   message(paste0("Saving transects as `", basename(transect_file), "`."))
-  
+
+  # save shapefile
   st_write(
     linestring,
     transect_file
   )
 }
+```
 
-# if need to edit the `linestring` object
+If needed, transects (`linestring` object) can be edited
+
+```{r edit-transects}
 if (FALSE) {
   linestring <-
     mapview::mapview(linestring) %>%
     mapedit::editMap("linestring")
-  
-  # select specific lines
-  mapedit::selectFeatures(linestring)
-  #   st_write(
-  #   linestring,
-  #   transect_file
-  # )
+
+  st_write(
+    linestring,
+    transect_file
+  )
 }
 
 ```
@@ -365,71 +333,62 @@ time(multi_rast)  <- rast_names
 names(multi_rast) <- paste(names(multi_rast), rast_names, sep = "_")
 
 
-vel_ext_transect <- 
- terra::extract(multi_rast, linestring, xy = TRUE) %>%
- select(ID, x , y, contains("vel_mag")) %>%
+vel_ext_transect <-
+  terra::extract(multi_rast, linestring, xy = TRUE) %>%
+  select(ID, x, y, contains("vel_mag")) %>%
   pivot_longer(
-    cols      = c(-ID, -x, -y),     # columns to pivot long,
-    names_to  = "name",  # desired name for category column
+    cols      = c(-ID, -x, -y), # columns to pivot long,
+    names_to  = "name", # desired name for category column
     values_to = "vel_mag", # desired name for value column
-    ) %>%
+  ) %>%
   mutate(
     date = str_extract(name, "\\d.*"),
     date2 = as_date(date)
-  ) %T>% 
+  ) %T>%
   print()
 ```
+
+
+Set sufficed to file names with starting date to end date
+
+```{r set-file-suffix}
+date_suffix <- 
+  c(first(rast_names), last(rast_names)) %>%
+  paste0("_", skip_dates, collapse = "_") %T>% 
+  print()
+```
+
 
 # ---- Extract Distance from Shore ----
 
 ```{r distance-from-shore}
 # extract starting point of each transect
-polyline_pts <- 
+polyline_first_pt <- 
   linestring %>% 
   st_coordinates() %>%
   as_tibble(.name_repair = janitor::make_clean_names) %>%
   slice_head(by = l1) %T>% 
   print()
 
-left_join(
-  polyline_pts,
-  
-  # extract first value along transect >0.5 m/s
-  filter(vel_ext_transect, vel_mag >= 0.5) %>%
-    slice_head(by = c(ID, date)),
-  
-  by = c("l1" = "ID"),
-  suffix = c("_shr", "_fc")
-  ) %>%
-  rowwise() %>%
-  mutate(
-    dist = geodist_vec(
-      x_shr, y_shr, 
-      x_fc, y_fc, 
-      measure = "geodesic") / 1000
-    ) %>%
-  ungroup()
-```
-
-
-```{r distance-from-shore}
+# join the first point of each transect to the cells extracted along the transects
 dist_from_shore <-
   left_join(
-    polyline_pts,
-
-    # extract first value along transect >0.5 m/s
+    # first point from each transect
+    polyline_first_pt,
+    
+    # extracted cells
     vel_ext_transect,
-    # filter(vel_ext_transect, vel_mag >= 0.5),
     by = c("l1" = "ID"),
     suffix = c("_shr", "_fc")
   ) %>%
   rowwise() %>%
   mutate(
+    # calcualte distance from starting point to each cell along the transect
     dist = geodist_vec(
       x_shr, y_shr,
       x_fc, y_fc,
       measure = "geodesic",
-      paired = TRUE
+      paired  = TRUE
     ) / 1000
   ) %>%
   ungroup() %T>%
@@ -443,19 +402,10 @@ dist_from_shore %>%
 ```
 
 
-# ---- Plots ----
-
-```{r set-file-suffix}
-date_suffix <- 
-  c(first(rast_names), last(rast_names)) %>%
-  paste0("_", skip_dates, collapse = "_") %T>% 
-  print()
-```
-
-TODO: try this method to show distance from shore
-<https://stackoverflow.com/questions/71473958/how-to-keep-points-in-gganimate-after-each-frame-is-rendered>
-
 ```{r add-line_names}
+# extract transect names from stations file
+# add MQ = Marquesas Key
+# add second MR 
 transect_names <-   
   c("MQ", arrange(station, lon)  %>%
    distinct(line_id) %>%
@@ -468,6 +418,7 @@ transect_names <-
     line_name = fct_inorder(line_name)
     )
 
+# merge transect names
 dist_from_shore2 <- 
   left_join(
     x  = dist_from_shore,
@@ -477,52 +428,65 @@ dist_from_shore2 <-
   relocate(line_name, .after = l1) %T>% 
   print()
 
+# subset values >0.5 and extract minimum distance
 dist_fc <- 
   dist_from_shore2 %>%
   # extract first value along transect >0.5 m/s
   filter(vel_mag >= 0.5) %>%
   filter(.by = c(date2, line_name), dist == min(dist))
-
-dir_create(here("data", "processed"))
-
-dist_from_shore2 %>% 
-  select(
-    line_name,
-    "shore_lon_dd"      = x_shr,
-    "shore_lat_dd"      = y_shr,
-    "fl_current_lon_dd" = x_fc,
-    "fl_current_lat_dd" = y_fc,
-    "velocity"          = vel_mag,
-    "date"              = date2,
-    "distance_km"       = dist
-  ) %>% 
-  arrange(date)%>% 
-  write_csv(
-    here("data", "processed", glue("dist_above_5_{date_suffix}.csv")),
-    na = ""
-    )
-
-dist_fc %>% 
-  select(
-    line_name,
-    "shore_lon_dd"      = x_shr,
-    "shore_lat_dd"      = y_shr,
-    "fl_current_lon_dd" = x_fc,
-    "fl_current_lat_dd" = y_fc,
-    "velocity"          = vel_mag,
-    "date"              = date2,
-    "distance_km"       = dist
-  ) %>% 
-  arrange(date) %>% 
-  write_csv(
-  here("data", "processed", glue("fc_dist_{date_suffix}.csv")),
-  na = ""
-  )
 ```
 
 
-```{r}
-test2 <- 
+```{r save-extracted-data}
+if (!file_exists(here("data", "processed", glue("fc_dist_{date_suffix}.csv")))) {
+  dir_create(here("data", "processed"))
+
+  dist_from_shore2 %>%
+    select(
+      line_name,
+      "shore_lon_dd"      = x_shr,
+      "shore_lat_dd"      = y_shr,
+      "fl_current_lon_dd" = x_fc,
+      "fl_current_lat_dd" = y_fc,
+      "velocity"          = vel_mag,
+      "date"              = date2,
+      "distance_km"       = dist
+    ) %>%
+    arrange(date) %>%
+    write_csv(
+      here("data", "processed", glue("dist_above_5_{date_suffix}.csv")),
+      na = ""
+    )
+}
+
+if (!file_exists(here("data", "processed", glue("fc_dist_{date_suffix}.csv")))) {
+  dist_fc %>%
+    select(
+      line_name,
+      "shore_lon_dd"      = x_shr,
+      "shore_lat_dd"      = y_shr,
+      "fl_current_lon_dd" = x_fc,
+      "fl_current_lat_dd" = y_fc,
+      "velocity"          = vel_mag,
+      "date"              = date2,
+      "distance_km"       = dist
+    ) %>%
+    arrange(date) %>%
+    write_csv(
+      here("data", "processed", glue("fc_dist_{date_suffix}.csv")),
+      na = ""
+    )
+}
+```
+
+
+# ---- Plots ----
+
+TODO: try this method to show distance from shore
+<https://stackoverflow.com/questions/71473958/how-to-keep-points-in-gganimate-after-each-frame-is-rendered>
+
+```{r plot-per-transect}
+dist_avg_month <- 
   dist_from_shore2 %>%
   mutate(
     months = format(date2, "%B %Y"),
@@ -542,8 +506,8 @@ dist_from_shore2 %>%
   geom_hline(yintercept = 0.5, color = "red") +
   geom_path(show.legend = FALSE) +
   geom_point(show.legend = FALSE) +
-  geom_path(data = test2,  color = "black", show.legend = FALSE) +
-  geom_point(data = test2, color = "black",  show.legend = FALSE) +
+  geom_path(data = dist_avg_month,  color = "black", show.legend = FALSE) +
+  geom_point(data = dist_avg_month, color = "black",  show.legend = FALSE) +
   labs(
     x = "Distance from Shore (km)", 
     y = expression("Velocity"~(m~s^-1)),
@@ -606,6 +570,8 @@ if (FALSE) {
 
 For `vel_vect`, may want to have more vectors along keys so instead of filtering
 for every `slice_by`, should include a polygon to keep?
+
+
 
 ```{r vars-plt-mag-vel-vectors}
 slice_by      <- 5
@@ -698,13 +664,7 @@ anim_save(
   nframes  = nlyr(multi_rast),
   # fps      = 20
   )
-tictoc::toc()
 
-for (i in 1:2) {
-  beepr::beep(8)
-
-  Sys.sleep(20)
-}
 ```
 
 
@@ -717,7 +677,7 @@ year_to_run <- "2021"
 # ---- Create Polygon ----
 
 ```{r edit-transects}
-transect_file <- here(path_save, "..", "fl_keys_polygon.shp")
+transect_file <- here(shp_save, "fl_keys_polygon.shp")
 
 # stations_path <- rstudioapi::selectFile() 
 stations_path <- 
@@ -859,7 +819,7 @@ test2 <-
 # Create Transects along Shelf
 
 ```{r edit-transects}
-transect_file <- here(path_save, "..", "transects_along.shp")
+transect_file <- here(shp_save, "transects_along.shp")
 
 # stations_path <- rstudioapi::selectFile() 
 stations_path <- 
