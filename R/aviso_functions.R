@@ -83,15 +83,24 @@ aviso_download <- function(
 }
 
 
-
-aviso_load <- function(ssh_path, .by = 1) {
+#' Load AVISO+ Data
+#'
+#' FUNCTION_DESCRIPTION
+#'
+#' @param data_path Path to data
+#' @param .by Number of days skip
+#'
+#' @return A list with a tibble and gridded data 
+#' @examples
+#' # ADD_EXAMPLES_HERE
+aviso_load <- function(data_path, .by = 1) {
   seq_nc <- expression(seq(1, nc_len, by = .by))
 
-  multi_day <- vector("list", length(ssh_path))
+  multi_day <- vector("list", length(data_path))
 
-  for (j in seq(ssh_path)) {
+  for (j in seq(data_path)) {
     # open data and extract variables
-    ssh_nc <- nc_open(ssh_path[j])
+    ssh_nc <- nc_open(data_path[j])
 
     attributes(ssh_nc$var) # show vars names
     attributes(ssh_nc$dim) # show vars names
