@@ -552,8 +552,7 @@ trasect_plt <-
 
 if (FALSE) {
   anim_save(
-    # file      = glue("trasect_plot4_{date_suffix}.mp4"),
-    file      = glue("trasect_plot_2015.mp4"),
+    file      = glue("trasect_plot4_{date_suffix}.mp4"),
     animation = trasect_plt,
     path      = animate_save,
     renderer  = ffmpeg_renderer(format = "mp4", ffmpeg = ffmpeg_path),
@@ -582,9 +581,10 @@ filt <-
   # filter(date == first(date))
 
 aviso_tile <- aviso_grid_tibble %>% filt
-pts_lt   <- filter(vel_ext_transect, vel_mag < 0.5) %>% filt
-pts_gt   <- filter(vel_ext_transect, vel_mag >= 0.5) %>% filt
-vel_vect <- slice(aviso_grid_tibble, seq(1, n(), by = slice_by)) %>% filt
+pts_lt     <- filter(vel_ext_transect, vel_mag < 0.5) %>% filt
+pts_gt     <- filter(vel_ext_transect, vel_mag >= 0.5) %>% filt
+vel_vect   <- slice(aviso_grid_tibble, seq(1, n(), by = slice_by)) %>% 
+  filt
 ```
 
 
@@ -650,7 +650,6 @@ plt_mag_vel_vect <-
   labs(title = "Date: {closest_state}")
 
 # save animation
-tictoc::tic()
 anim_save(
   file      = glue("mag_vel_vect2_{date_suffix}.mp4"), 
   animation = plt_mag_vel_vect, 
@@ -668,9 +667,11 @@ anim_save(
 ```
 
 
-```{r}
-year_to_run <- "2021"
-```
+
+
+
+# WIP: Crop along the FL Keys and add more vectors
+
 
 
 
