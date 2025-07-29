@@ -258,16 +258,14 @@ are extracted. Then manual creation of transects are done.
 ```{r create-load-transects}
 transect_file <- here(shp_save, "transects2.shp")
 
-stations_path <-
+# stations_path <- rstudioapi::selectFile() 
+stations_path <- 
   here("data", "raw") %>%
-  dir_ls(regexp = "stations")
+  dir_ls(regexp = "station_info")
 
-station_sht <- readxl::excel_sheets(stations_path)
-
-station <-
+station <- 
   readxl::read_excel(
-    stations_path,
-    station_sht[9],
+    stations_path, 
     .name_repair = janitor::make_clean_names
   ) %>%
   filter(str_detect(geo_loc_name, "(?i)florida keys") & !str_detect(line_id, "PL")) %>%
