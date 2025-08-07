@@ -113,8 +113,10 @@ ctd_dat <-
 min_max_date <-
   ctd_dat %>%
   unnest(data) %>%
+  arrange(time) %>% 
   select(cruise_id, min_time, max_time) %>%
-  distinct()
+  distinct %T>%
+  print()
 
 # save file
 save_loc <- rstudioapi::selectDirectory()
@@ -126,6 +128,58 @@ if (!file_exists(save_loc)) {
 
 ```
 
+Load Florida Current Data
+
+```{r}
+# fc_dist <- rstudioapi::selectFile()
+
+fc_dist_path <- "C:/Users/sebastian15/Box/aviso_velocity/data/processed/fc_dist_2015-01-01_1_2024-11-19_1.csv"
+```
 
 
+```{r}
+fc_dist <- read_csv(fc_dist_path, show_col_types = FALSE)
+
+```
+
+```{r}
+dates_14 <- 
+  min_max_date %>% 
+  # slice(1:3) %>% 
+  pull(max_time) %>% 
+  map(
+    \(.x) {
+      as_date((.x-days(14)):.x)
+    }
+  ) %>% 
+  list_c() 
+  
+fc_dist_filt <- 
+  fc_dist %>% 
+  filter(date %in% dates_14) %>%
+  print()
+
+```
+
+```{r}
+fc_dist_filt %>% 
+  mutate(
+    line_name = fct_reorder(line_name, shore_lon_dd, .fun = min)
+  ) %>%
+  ggplot(aes(x = date, y = distance_km, color = line_name)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    x = NULL,
+    color = NULL
+  ) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y",
+               limits = ym(c("2015-01", "2024-01"))
+               ) +
+  facet_wrap(~line_name, ncol = 3) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45)
+  )
+```
 
