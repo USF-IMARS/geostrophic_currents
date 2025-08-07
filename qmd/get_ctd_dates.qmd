@@ -1,0 +1,165 @@
+---
+title: "Extract Dates from All CTD Data"
+author: "Sebastian Di Geronimo"
+date: 2025-08-07
+format: html
+editor: source
+---
+
+
+
+# ---- Summary of Document ----
+
+Load all CTD data and extract the min and max dates for all CTD data
+
+
+
+
+# ---- Setup ----
+
+
+## Load Libraries
+
+```{r setup, include=FALSE}
+if (!nzchar(system.file(package = "librarian"))) 
+  install.packages("librarian")
+
+librarian::shelf(
+  quiet = TRUE,
+  librarian, conflicted, ggplot2, tibble, tidyr, readr, purrr, dplyr, stringr,
+  forcats, lubridate, glue, fs, magrittr, here,
+  
+  # additional
+)
+
+conflicts_prefer(
+  dplyr::filter(), 
+  dplyr::select()
+  )
+
+
+
+# set paths to downloaded data, ffmpeg, and animation
+path_save <- here("data", "raw", "copernicus")
+
+
+```
+
+```{r}
+# path_save <- rstudioapi::selectDirectory()
+
+path_save <- "C:/Users/sebastian15/Box/mbon_imars_cruises/ctd_data/cleaned_ctd_data"
+
+ctd_dat <- 
+  path_save %>% 
+  dir_ls() %>% 
+  tibble(file = .) %>% 
+  # slice(1:4) %>%
+  mutate(
+    data = imap(
+      file, 
+      \(.x, idx) {
+        print(basename(.x))
+        cruis <- # help fix cruise WB22212
+          basename(.x) %>% 
+          tools::file_path_sans_ext() %>%
+          str_replace("WS", "WB")
+        
+        x <- read_csv(.x, show_col_types = FALSE) %>% 
+          select(cruise_id, time, station) %>%
+           mutate(
+             station2 = str_remove(station, cruis),
+                     station2 = str_remove(station2, "^\\."),
+                     station2 = str_remove(station2, "^0{1,3}"),
+                     station2 = str_replace(station2, "(_)", "."),
+                     station2 = str_replace(station2, ".*LK.*", "21LK")
+           ) %>% 
+          filter(station2 %in% c("WS", "MR", "21LK", seq(1:24), "9.5")) %>% 
+          mutate(
+            min_time = min(time, na.rm = TRUE),
+            max_time = max(time, na.rm = TRUE),
+          ) %>% 
+          filter(
+          .by = cruise_id,
+          time == min_time | time == max_time
+          ) %>% 
+          mutate(
+            station2 = as.character(station2),
+            station = as.character(station)
+          ) %>%
+          distinct()
+        
+        return(x)
+      }
+      )
+  )
+
+```
+
+```{r}
+ctd_dat %>% 
+  unnest(data) %>% 
+  select(file, cruise_id, time, station) %>% 
+  filter(station %in% c("WS", "MR", "LK", seq(1:24), "9.5")) %>% 
+  filter(
+    .by = cruise_id,
+    time == min(time) | time == max(time)
+  ) %>% 
+  distinct()
+```
+
+```{r}
+ctd_dat1 %>% 
+  # unnest(data) %>%
+  mutate(
+    dims = map(data,
+               \(.x) {dim(.x)}
+               )
+  ) %>%
+  unnest(dims) %>% filter(dims == 1)
+  mutate(
+    min_time = as_date(min_time),
+    max_time = as_date(max_time)
+  ) %>% 
+  relocate(time, .after = last_col()) %>% 
+  arrange(time)
+```
+
+```{r}
+ctd_dat1 %>% 
+  mutate(
+    dims = map(data, 
+               \(.x) {dim(.x)}
+               )
+  ) %>% 
+  unnest(dims) %>% filter(dims == 1) %>% 
+  mutate(
+    dat2 = map(file, 
+               \(.x) {
+                 cruis <- basename(.x) %>% tools::file_path_sans_ext() %>% 
+                   str_replace("WS", "WB")
+                 
+                 x <- read_csv(.x, show_col_types = FALSE) %>% 
+                   select(cruise_id, time, station) %>% 
+                   mutate(
+                     
+                     station2 = str_remove(station, cruis),
+                     station2 = str_remove(station2, "^\\."),
+                     station2 = str_remove(station2, "^0{1,3}"),
+                     station2 = str_replace(station2, "(_)", "."),
+                     station2 = str_replace(station2, ".*LK.*", "21LK"),
+                     
+                     
+                   ) %>% distinct(station, station2) %>% View(title = basename(.x))
+          # filter(station %in% c("WS", "MR", "LK", seq(1:24), "9.5")) %>% 
+          # mutate(
+          #   min_time = min(time, na.rm = TRUE),
+          #   max_time = max(time, na.rm = TRUE),
+          # )%>% 
+          #        View()
+                 browser()
+               }
+               )
+  )
+```
+
