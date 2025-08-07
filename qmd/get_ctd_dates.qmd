@@ -169,6 +169,10 @@ fc_dist_filt %>%
   ggplot(aes(x = date, y = distance_km, color = line_name)) +
   geom_line() +
   geom_point() +
+  
+  # geom_vline(xintercept = min_max_date$min_time, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = min_max_date$max_time, color = "blue", linetype = "dashed") +
+  
   labs(
     x = NULL,
     color = NULL
