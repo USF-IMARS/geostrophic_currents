@@ -102,7 +102,20 @@ conflicts_prefer(
 source(here("R", "aviso_functions.R"))
 
 # set paths to downloaded data, ffmpeg, and animation
-path_save <- here("data", "raw", "copernicus")
+loop <- FALSE
+loop <- TRUE
+if (loop) {
+  message("Adding loop current")
+  add_loop <- "loop_current"
+  xmin <- -89
+} else {
+  add_loop <- ""
+  xmin <- -83.8125
+}
+
+
+path_save <- here("data", "raw", "copernicus", add_loop) 
+
 dir_create(path_save)
 
 # path to executable and path to save data
@@ -118,15 +131,15 @@ months <-
   seq(as_date("2015-01-01"),
       as_date("2024-12-31"),
       by = "1 month")
-months <-
-  seq(as_date("2015-01-01"),
-      as_date("2015-01-31"),
-      by = "1 month")
+# months <-
+#   seq(as_date("2015-01-01"),
+#       as_date("2015-01-31"),
+#       by = "1 month")
 
 # set spatial extent
 aviso_bbox <-
   c(
-    xmin = -83.8125,
+    xmin = xmin,
     xmax = -78.3125,
     ymin = 22.8125,
     ymax = 26.4375
@@ -173,7 +186,11 @@ aviso_download(
   overwrite
 )
 
+# path_box <- rstudioapi::selectDirectory()
+path_box <- here("C:/Users/sebastian15/Box/aviso_velocity/data/raw/copernicus", 
+                 add_loop)
+
+dir_ls(path_save1) %>% 
+file_copy(path_box)
 ```
-
-
 
