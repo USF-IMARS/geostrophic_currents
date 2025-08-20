@@ -327,6 +327,29 @@ if (!file_exists(hycom_info)) {
 
 
 ## 3.3 Download HYCOM-TSIS Data
+```{r}
+min_max_date <-
+  rstudioapi::selectFile() %>% 
+  read_csv(show_col_types = FALSE)
+
+cruise_ids <- c("WS16004", "WS17030", "WS17212", "WS18008", "WS20342", "WS21212")
+
+min_max_date <- 
+  min_max_date %>% 
+  mutate(
+    year = year(max_time)
+  ) %>% 
+  # filter(year %in% c(2016:2018)) %>% 
+  filter(cruise_id %in% cruise_ids) %>% 
+  # slice(1:3) %>% 
+  pull(max_time) %>% 
+  map(
+    \(.x) {
+      as_date((.x-days(7)):.x)
+    }
+  ) %>% 
+  list_c() 
+```
 
 ```{r download-hycom}
 dwnld_path <- here("data", "raw", "hycom")
@@ -348,9 +371,11 @@ path_save <-
   ) %T>%
   print() 
 
-
-path_save %>%
-  slice(1:2) %$%
+# filter dates
+path_save %>% 
+  mutate(date2 = str_remove(date, "T.*") %>% ymd()) %>%
+  filter(date2 %in% min_max_date) %$%
+  # slice(1500:1502) %$%
   walk2(
     final_path,
     file_name,
@@ -358,6 +383,12 @@ path_save %>%
       print(.url)
       cat("\n\n\n")
       print(.file_name)
+      
+      if (file_exists(here(dwnld_path, .file_name))) {
+         message("File exists. Returing.")
+         return()
+      }
+      
       download.file(
         url      = .url,
         destfile = here(dwnld_path, .file_name),
@@ -365,6 +396,7 @@ path_save %>%
       )
     }
   )
+
 ```
 
 
@@ -372,9 +404,10 @@ path_save %>%
 
 ```{r load-data}
 hycom_path <- here("data", "raw", "hycom") %>%
-  dir_ls()
+  dir_ls() %T>% 
+  print()
 
-hycom_path <- rstudioapi::selectFile(path = here("..", "misc_ideas", "data", "raw", "hycom"))
+# hycom_path <- rstudioapi::selectFile(path = here("..", "misc_ideas", "data", "raw", "hycom"))
 
 ```
 
@@ -386,7 +419,7 @@ shelf(terra)
 
 
 ```{r}
-hycom_dat <- ncdf4::nc_open(hycom_path)
+hycom_dat <- ncdf4::nc_open(hycom_path[2])
 
 hycom_dat
 names(hycom_dat)
