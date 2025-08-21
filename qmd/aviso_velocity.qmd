@@ -165,7 +165,7 @@ If there are multiple time dimensions, will load each date into its own list
 if (!exists("aviso_path") & interactive()) {
   aviso_path <-
     here::here("data") %>%
-    rstudioapi::selectFile(path = .)
+    rstudioapi::selectDirectory(path = .)
 }
 
 aviso_path <- eval(aviso_path)
@@ -176,12 +176,12 @@ aviso_path_full <-
 
 # set year(s) to load data
 # if multiple separate with `|`
-year_to_load <- "2016-01-01"
+year_to_load <- "2021"
 
 aviso_path <-
   aviso_path_full %>%
   Filter(\(.x) str_detect(.x, year_to_load), .) %>%
-  .[] %T>% 
+  .[6:9] %T>% # add months to run
   {
     .[] %>%
     str_extract("(\\d{4}-.*)\\.nc", group = 1) %>%
@@ -198,7 +198,7 @@ Velocity (m/s) is calculated by: $ mag = \sqrt{ugos^2 + vgos^2} $
 
 ```{r load-multi}
 # number of days to skip to reduce data size
-skip_dates <- 10
+skip_dates <- 1
 
 # load aviso data
 aviso_days <- aviso_load(aviso_path, .by = skip_dates)
@@ -487,9 +487,9 @@ TODO: try this method to show distance from shore
 dist_avg_month <- 
   dist_from_shore2 %>%
   mutate(
+         ) %>%
     months = format(date2, "%B %Y"),
     months = my(months),
-         ) %>%
   summarise(
     .by = c(months, l1, line_name, dist),
     vel_mag = mean(vel_mag, na.rm = TRUE)
@@ -615,16 +615,16 @@ plt_mag_vel_vect <-
   geom_sf(data = linestring, color = "red")  +
 
   # less than 0.5 m/s
-  geom_point(data = pts_lt,
-             aes(x = x,  y = y),
-             color = "blue",
-             size  = 0.5) +
-
-  # greater than 0.5 m/s
-  geom_point(data = pts_gt,
-             aes(x = x,  y = y),
-             color = "green",
-             size  = 0.5) +
+  # geom_point(data = pts_lt,
+  #            aes(x = x,  y = y),
+  #            color = "blue",
+  #            size  = 0.5) +
+  # 
+  # # greater than 0.5 m/s
+  # geom_point(data = pts_gt,
+  #            aes(x = x,  y = y),
+  #            color = "green",
+  #            size  = 0.5) +
   
   # styling
   labs(x = NULL, y = NULL,
@@ -649,7 +649,7 @@ plt_mag_vel_vect <-
 
 # save animation
 anim_save(
-  file      = glue("mag_vel_vect2_{date_suffix}.mp4"), 
+  file      = glue("mag_vel_vect2_{date_suffix}_loop2.mp4"), 
   animation = plt_mag_vel_vect, 
   path      = animate_save, 
   renderer  = ffmpeg_renderer(format = "mp4", ffmpeg = ffmpeg_path), 
