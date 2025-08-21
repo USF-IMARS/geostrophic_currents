@@ -196,7 +196,22 @@ This search only needs to happen once to get the file name.
 To subset the data, change the info in constants 
 
 ```{r search-hycom}
-hycom_info <- here(rstudioapi::selectDirectory(), "hycom_100deg_download_instructions.csv")
+if (exists(cloud_dir)) {
+  hycom_info <-
+    here(
+      cloud_dir,
+      "data",
+      "hycom_100deg_download_instructions.csv"
+      )
+} else {
+  hycom_info <- 
+    here(
+    rstudioapi::selectDirectory(),
+    "data",
+    "hycom_100deg_download_instructions.csv"
+  )
+}
+
 
 if (!file_exists(hycom_info)) {
   shelf(rvest)
@@ -319,7 +334,7 @@ if (!file_exists(hycom_info)) {
   
 } else {
   
-  final_download_info <- read_csv(hycom_info)
+  final_download_info <- read_csv(hycom_info, show_col_types = FALSE)
 }
 
 
@@ -352,8 +367,11 @@ min_max_date <-
 ```
 
 ```{r download-hycom}
-dwnld_path <- here("data", "raw", "hycom")
-# dwnld_path <- here(rstudioapi::selectDirectory())
+if (exists("cloud_dir")) {
+  dwnld_path <- here(cloud_dir, "data", "raw", "hycom")
+} else {
+  dwnld_path <- here("data", "raw", "hycom")
+}
 
 dir_create(dwnld_path)
 
@@ -419,7 +437,7 @@ shelf(terra)
 
 
 ```{r}
-hycom_dat <- ncdf4::nc_open(hycom_path[2])
+hycom_dat <- ncdf4::nc_open(hycom_path[10])
 
 hycom_dat
 names(hycom_dat)
@@ -454,7 +472,9 @@ lon  <- ncvar_get(hycom_dat, "Longitude")
 
       # dat_grid_temp[[i]] <- ssh_grid
 
-
+ncvar_get(hycom_dat, "MT") %>% 
+  lubridate::as_date(origin = "1900-12-31")
+  
 
 nc_close(hycom_dat)
 ```
@@ -472,11 +492,51 @@ unique(hycom_grid$lat)
 ```
 
 ```{r}
-ggplot() +
-  geom_tile(data = hycom_grid, aes(x = lon, y = lat, fill = vel_mag)) +
+for (paths in hycom_path) {
+  
+hy2 <- hycom_load(paths)
+# hy2 <- hycom_load(hycom_path[1])
+
+slice_by <- 200
+length_divide <-  2
+vel_vect <- slice(hy2$tibble, seq(1, n(), by = slice_by))
+
+xlim <- range(hy2$tibble$lon)
+ylim <- range(hy2$tibble$lat)
+
+# ggplot() +
+#   geom_tile(data = hycom_grid, aes(x = lon, y = lat, fill = vel_mag)) +
+#   # scale_fill_
+#   theme_bw() +
+#   coord_cartesian(expand = FALSE)
+plt <- ggplot() +
+  geom_tile(data = hy2$tibble, aes(x = lon, y = lat, fill = vel_mag)) +
+    # velocity vectors
+  geom_segment(
+    data = vel_vect,
+    aes(
+      x     = lon, 
+      xend  = lon + hycom_u/length_divide, 
+      y     = lat, 
+      yend  = lat + hycom_v/length_divide, 
+      color = vel_mag
+      ),
+    arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
+    linewidth = 0.25,                              # adjust arrow thickness
+    na.rm     = TRUE
+  ) +
   # scale_fill_
   theme_bw() +
-  coord_cartesian(expand = )
+  facet_wrap(~date) +
+  scale_fill_viridis_b(breaks = c(0.25, seq(0, 2, by = 0.5))) +
+  scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
+  coord_cartesian(expand = FALSE, ylim = ylim, xlim = xlim)
+print(plt)
+}
+shelf(camcorder)
+camcorder::gg_record(here("data", "plots", "camcorder2"))
+camcorder::gg_stop_recording()
+camcorder::gg_playback(frame_duration = 0.7)
 ```
 
 ```{r}
