@@ -139,8 +139,6 @@ aviso_load <- function(data_path, .by = 1) {
     # close `.nc` file
     nc_close(ssh_nc)
 
-    dat_grid_temp
-
     multi_day[[j]] <-
       dat_grid_temp %>%
       Filter(Negate(is.null), .)
@@ -163,3 +161,86 @@ aviso_load <- function(data_path, .by = 1) {
       )
   )
 }
+
+
+
+
+
+#' Load HYCOM-TSIS Data
+#'
+#' FUNCTION_DESCRIPTION
+#'
+#' @param data_path Path to data
+#' @param .by Number of days skip
+#'
+#' @return A list with a tibble and gridded data 
+#' @examples
+#' # ADD_EXAMPLES_HERE
+hycom_load <- function(data_path, .by = 1) {
+  
+  multi_day <- vector("list", length(data_path))
+  
+  for (j in seq(data_path)) {
+    # open data and extract variables
+    hycom_dat <- nc_open(data_path[j])
+
+    attributes(hycom_dat$var) # show vars names
+    attributes(hycom_dat$dim) # show vars names
+    
+    # extract dates
+    nc_date <- 
+      lubridate::as_date(
+        ncvar_get(hycom_dat, "MT"), 
+        origin = as_date(hycom_dat$dim$MT$units)
+      )
+
+    # extract variables
+    if (length(ncvar_get(hycom_dat, "Depth")) > 1) {
+      # if multiple depths
+      message("HYCOM data has multiple depths (m).")
+      hycom_u <- ncvar_get(hycom_dat, "u")[, , 1]
+      hycom_v <- ncvar_get(hycom_dat, "v")[, , 1]
+    } else {
+      # if single depth
+      message("HYCOM data has one depth (m).")
+      hycom_u <- ncvar_get(hycom_dat, "u") 
+      hycom_v <- ncvar_get(hycom_dat, "v") 
+    }
+    
+    lat  <- ncvar_get(hycom_dat, "Latitude")
+    lon  <- ncvar_get(hycom_dat, "Longitude")
+    
+    # create grid data
+    hycom_grid <-
+      expand.grid(lon = lon, lat = lat) %>%
+      mutate(
+        hycom_v    = as.vector(hycom_v), # north geostrophic velocity
+        hycom_u    = as.vector(hycom_u), # east geostrophic velocity
+        vel_mag    = sqrt(hycom_v^2 + hycom_u^2) # calculate current velocity
+      )
+    
+    # close `.nc` file
+    nc_close(hycom_dat)
+    
+    
+    multi_day[[j]] <-
+      hycom_grid %>%
+      Filter(Negate(is.null), .)
+    
+    names(multi_day)[[j]] <- as.character(nc_date)
+  }
+  
+  # convert to tibble
+  grid_tibble <-
+    multi_day %>%
+    list_rbind(names_to = "date")
+  
+  return(
+    list(
+      "gridded" = multi_day,
+      "tibble"  = grid_tibble
+    )
+  )
+}
+
+
