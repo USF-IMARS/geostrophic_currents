@@ -122,7 +122,6 @@ source(here("R", "aviso_functions.R"))
 ## 2.2 Cruise Dates
 
 ```{r ctd-dates}
-source(here("R", "aviso_functions.R"))
 # minimum year to extract from
 min_year <- 2015
 hours_of_day <- c(12, 23)
@@ -152,22 +151,6 @@ if (exists("cloud_dir")) {
 
 cruise_ids <- c("WS16004", "WS17030", "WS17212", "WS18008", "WS20342", "WS21212")
 
-min_max_date <- 
-  min_max_date %>% 
-  filter(year >= min_year) %>% # start of HYCOM data
-  # filter(year %in% c(2016:2018)) %>%
-  # filter(cruise_id %in% cruise_ids) %>% 
-  # slice(1:3) %>% 
-  pull(max_time) %>% 
-  
-  # add all dates from max date minus x days
-  map(
-    \(.x) {
-      as_date((.x-days(prev_day)):.x)
-    }
-  ) %>% 
-  list_c() %T>% 
-  print()
 ```
 
 
@@ -520,6 +503,49 @@ hycom_path <- here(cloud_dir, "data", "raw", "hycom") %>%
   }
 
 # hycom_path <- rstudioapi::selectFile(path = here("..", "misc_ideas", "data", "raw", "hycom"))
+
+cruise_id <- 
+  filter(min_max_date, year >= 2015) %>% 
+  distinct(cruise_id) %>% 
+  pull(cruise_id) %T>%
+  print()
+
+# for (i in cruise_id) {
+#   
+# 
+#   # filter CTD dates
+#   filt_dates <- 
+#     min_max_date %>% 
+#     filter(
+#       # year == 2018,
+#       cruise_id == i
+#     ) %>% pull(max_time) %>% 
+#     
+#     # add all dates from max date minus x days
+#     map(
+#       \(.x) {
+#         as_date((.x-days(prev_day)):.x)
+#       }
+#     ) %>% 
+#     list_c() %T>% 
+#     print()
+# 
+#   hycom_filt <- 
+#     hycom_path %>% 
+#     tibble(file = .) %>% 
+#     mutate(
+#       date = str_extract(file, "\\d{4}_\\d{2}_\\d{2}"),
+#       date = as_date(date)
+#     ) %>% 
+#     # filter(date %in% filt_dates) %>% 
+#     filter(date == as_date("2018-07-26"))
+#     pull(file) %T>% 
+#     print()
+}
+
+
+
+
 ```
 
 ## Load Coast
@@ -612,12 +638,13 @@ mapview::mapview(linestring)
 ## Load Multiple HYCOM-TSIS Data
 
 ```{r terra}
-hycom_paths <- 
-  hycom_path[1] %>%
-  dir_ls() %T>% 
-  print() 
+# hycom_paths <- 
+#   hycom_path[1] %>%
+#   dir_ls() %T>% 
+#   print() 
 
-for (paths in hycom_paths) {
+# for (paths in hycom_paths) {
+for (paths in hycom_filt) {
   # read netcdf
   # hy_rast <- rast(hycom_paths[1])
   hy_rast <- rast(paths)
@@ -706,7 +733,8 @@ for (paths in hycom_paths) {
       guide    = guide_colorbar(
         barwidth       = 0.8,
         barheight      = 10,
-        title          = expression(Velocity ~ magnitude ~ (m ~ s^{-1})),
+        # title          = expression(Velocity ~ magnitude ~ (m ~ s^{-1})),
+        title          = expression( ~ speed ~ (m ~ s^{-1})),
         title.position = "right",
         title.hjust    = 0.5,
         title.theme    = element_text(angle = 90)
@@ -717,15 +745,225 @@ for (paths in hycom_paths) {
   print(plt)
 }
 
+
 # shelf(camcorder)
-camcorder::gg_record(here("data", "plots", "camcorder2_terra2"))
+camcorder::gg_record(here("data", "plots", "camcorder_xxx"), dpi = 600)
 camcorder::gg_stop_recording()
 camcorder::gg_playback(
   frame_duration       = 0.7, 
   first_image_duration = 10,
   last_image_duration  = 10,
-  last_as_first        = FALSE
+  last_as_first        = FALSE,
+  dpi = 600
   )
+```
+
+
+
+
+```{r terra-cam}
+tictoc::tic()
+# hycom_paths <- 
+#   hycom_path[1] %>%
+#   dir_ls() %T>% 
+#   print() 
+
+hycom_path_t <- 
+  hycom_path %>% 
+  tibble(file = .) %>% 
+  mutate(
+    date = str_extract(file, "\\d{4}_\\d{2}_\\d{2}"),
+    date = as_date(date)
+  )
+
+for (i in cruise_id) {
+  
+
+  # filter CTD dates
+  filt_dates <- 
+    min_max_date %>% 
+    filter(
+      cruise_id == i,
+      # year == 2018,
+      # cruise_id == "WS18285",
+    ) %>% 
+    pull(max_time) %>% 
+    # add all dates from max date minus x days
+    map(
+      \(.x) {
+        as_date((.x-days(prev_day)):.x)
+      }
+    ) %>% 
+    list_c() %T>% 
+    print()
+
+  # select dates that correspond the cruise dates  
+  hycom_filt <- 
+    hycom_path_t %>% 
+    filter(date %in% filt_dates) %>% 
+    mutate(
+      file_name = glue("{i}_{date}"),
+      file_name = str_replace_all(file_name, "-", "_")
+    ) %T>% 
+    print()
+
+  # cruise id for folder
+  folder_name <- here("data", "plots", glue("camcorder_{i}"))
+
+  if (dir_exists(folder_name)) {
+    print(glue("Cruise {i} already exists. Skipping!"))  
+    next
+  }
+
+
+  camcorder::gg_record(folder_name, dpi = 600)
+  # for (paths in hycom_paths) {
+  for (paths in pull(hycom_filt, file)) {
+    
+    # shelf(camcorder)
+    
+    # read netcdf
+    # hy_rast <- rast(hycom_paths[1])
+    hy_rast <- rast(paths)
+  
+    # extract date in the format as days since Dec 31, 1990
+    hy_date <-
+      lubridate::as_date(
+        as.numeric(str_extract(names(hy_rast)[1], "MT=(.*)", 1)),
+        origin = as_date("1900-12-31")
+      )
+  
+    # rename grids
+    names(hy_rast) <- c("sal", "u", "v", "w", "temp")
+  
+    # add velocity magnitude
+    hy_rast <-
+      hy_rast %>%
+      tidyterra::mutate(vel_mag = sqrt(u^2 + v^2))
+  
+    # add date to all layers
+    terra::time(hy_rast) <- rep(hy_date, nlyr(hy_rast))
+    
+    # convert spatRaster to data.frame
+    hy_dat <-
+      hy_rast %>%
+      terra::as.data.frame(xy = TRUE, date = hy_date) %>%
+      # rename spatial
+      rename("lon" = x, "lat" = y) %>%
+      relocate(date, .before = 1) %T>% 
+      print()
+  
+    # spatial extent for plotting
+    xy_ext <- ext(hy_rast)
+  
+    # plot
+    plt <-
+      ggplot() +
+  
+      # spatRaster
+      tidyterra::geom_spatraster(data = hy_rast, aes(fill = vel_mag)) +
+      
+      geom_sf(data = coast) +
+      
+      # transect lines
+      # geom_sf(data = linestring, color = "red", alpha = 0.5) +
+  
+      # velocity vectors
+      metR::geom_arrow(
+        data = hy_dat,
+        skip = 10,
+        aes(
+          x     = lon,
+          dx    = u ,
+          y     = lat,
+          dy    = v,
+          color = vel_mag
+        ),
+        # arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
+        size = 0.25,                              # adjust arrow thickness
+        na.rm = TRUE
+      ) +
+      labs(x = NULL, y = NULL, title = glue("{i}: {hy_date}")) +
+      scale_fill_gradientn(
+        name     = "Current",
+        colours  = oceColorsVelocity(120), # edit colors
+        limits   = c(0, 2),
+        breaks   = seq(0.0, 2, 0.25),
+        rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
+        oob      = scales::oob_squish,
+        guide    = guide_colorbar(
+          barwidth       = 0.8,
+          barheight      = 10,
+          title          = expression(Current ~ speed ~ (m ~ s^{-1})),
+          title.position = "right",
+          title.hjust    = 0.5,
+          title.theme    = element_text(angle = 90)
+        )
+      ) +
+      scale_color_gradientn(
+        name     = "Current",
+        colours  = oce.colorsPalette(120), # edit colors
+        limits   = c(0, 2),
+        breaks   = seq(0.0, 2, 0.25),
+        rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
+        oob      = scales::oob_squish,
+        guide    = guide_colorbar(
+          barwidth       = 0.8,
+          barheight      = 10,
+          # title          = expression(Velocity ~ magnitude ~ (m ~ s^{-1})),
+          title          =  expression(Current ~ speed ~ (m ~ s^{-1})),
+          title.position = "right",
+          title.hjust    = 0.5,
+          title.theme    = element_text(angle = 90)
+        )
+      ) +
+      coord_sf(expand = FALSE, ylim = xy_ext[3:4], xlim = xy_ext[1:2]) +
+      theme_bw()
+    print(plt)
+  }
+  
+  # folder_name <- glue("camcorder_{i}")
+  
+  # shelf(camcorder)
+  # camcorder::gg_record(here("data", "plots", folder_name), dpi = 600)
+  # camcorder::gg_stop_recording()
+  camcorder::gg_playback(
+    frame_duration       = 0.7, 
+    first_image_duration = 10,
+    last_image_duration  = 10,
+    last_as_first        = FALSE,
+    dpi = 600,
+    stoprecording = TRUE
+    )
+
+  folder_name %>% 
+    dir_ls(regexp = "png") %>% 
+    bind_cols(
+      hycom_filt , 
+      "old_file" = .
+    ) %>%
+    mutate(
+      file_name = here(dirname(old_file), glue("{file_name}.png")),
+      
+      
+      # new_file = dirname(old_file),
+      # new_file = glue("{new_file}")
+    ) %$%
+    map2(
+      old_file,
+      file_name,
+      \(x, y) {
+        file_move(x, y)
+      }
+    )
+  
+  folder_name %>% 
+    dir_ls(regexp = "gif") %>% 
+    file_move(here(dirname(.), glue("{i}_currents.gif")))
+  
+}
+
+tictoc::toc()
 ```
 
 # `ncdf4`: Load One HYCOM-TSIS File 
