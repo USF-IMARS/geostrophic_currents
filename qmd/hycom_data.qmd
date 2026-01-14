@@ -32,6 +32,9 @@ Hourly 2001-01-01 to "Present" (2-3 month delay)
 - velocity in u, v 
 - vertical velocity in w
 
+For addtional documentation:
+<https://www.hycom.org/hycom/documentation>
+
 
 ## HYCOM and NCODA Gulf of Mexico 1/25° Analysis
 This is some information about a higher resolution model from HYCOM and NCODA
@@ -200,7 +203,7 @@ This search only needs to happen once to get the file name.
 To subset the data, change the info in constants 
 
 ```{r search-hycom}
-if (exists(cloud_dir)) {
+if (exists("cloud_dir")) {
   hycom_info <-
     here(
       cloud_dir,
@@ -366,8 +369,14 @@ min_max_date <-
     \(.x) {
       as_date((.x - days(7)):.x)
     }
+<<<<<<< HEAD
   ) %>%
   list_c()
+=======
+  ) %>% 
+  list_c() %T>% 
+  print()
+>>>>>>> d3282fa6c94629532ff5a5f1291cb1f66a5d605b
 ```
 
 ```{r download-hycom}
@@ -395,8 +404,8 @@ path_save <-
 
 # filter dates
 path_save %>% 
-  mutate(date2 = str_remove(date, "T.*") %>% ymd()) %>%
-  filter(date2 %in% min_max_date) %$%
+  mutate(date2 = str_remove(date, "T.*") %>% ymd()) %$%
+  # filter(date2 %in% min_max_date) %$%
   # slice(1500:1502) %$%
   walk2(
     final_path,
@@ -407,7 +416,7 @@ path_save %>%
       print(.file_name)
       
       if (file_exists(here(dwnld_path, .file_name))) {
-         message("File exists. Returing.")
+         message("File exists. Returning.")
          return()
       }
       
@@ -422,7 +431,56 @@ path_save %>%
 ```
 
 
+<<<<<<< HEAD
 # 4.0 ---- Load Dataset ----
+=======
+```{r}
+shelf(progressr, furrr)
+```
+
+```{r parallel-download}
+plan(multisession, workers = 5)
+
+
+filt_download <-  
+  # filter dates
+  path_save %>%
+  mutate(date2 = str_remove(date, "T.*") %>% ymd()) %T>%
+  # filter(date2 %in% min_max_date) %$%
+  # slice(1:500) %T>% 
+  print()
+
+with_progress({
+  
+  p <- progressor(steps = nrow(filt_download))
+  
+  filt_download %$%
+    future_walk2(
+      final_path,
+      file_name,
+      \(.url, .file_name) {
+        p()
+        print(.url)
+        cat("\n\n\n")
+        print(.file_name)
+         if (file_exists(here(dwnld_path, .file_name))) {
+           message("File exists. Returning.")
+           return()
+         }
+         
+         download.file(
+           url      = .url,
+           destfile = here(dwnld_path, .file_name),
+           method   = "curl"
+         )
+        },
+        .progress = TRUE)
+})
+
+```
+
+# 4.0 Load Dataset
+>>>>>>> d3282fa6c94629532ff5a5f1291cb1f66a5d605b
 
 ```{r load-data}
 hycom_path <- here("data", "raw", "hycom") %>%
