@@ -244,3 +244,129 @@ hycom_load <- function(data_path, .by = 1) {
 }
 
 
+# minimum year to extract from
+hycom_search <- function(
+    hycom_url    = "https://tds.hycom.org/thredds/catalog/datasets/GOMb0.01/reanalysis/data/", 
+    min_year     = 2015, 
+    hours_of_day = 12
+    ) {
+  
+  # load rvest
+  shelf(rvest)
+  
+  # specific url base for searching the database
+  specifics <-
+    paste0(
+      "var=salinity&var=u&var=v&var=w_velocity&var=water_temp&",
+      "north={ymax}&west={xmin}&east={xmax}&south={ymin}&",
+      "disableProjSubset=on&",
+      "horizStride={horizon}&",
+      "time={date}&",
+      "vertCoord={vert}&accept=netcdf4"
+    )
+  
+  # ---- web searching ---- #
+  
+  # ---- search URL for every file
+  # selection based on minimum year and hour od day
+  search_individual_files <-
+    paste0(hycom_url, "catalog.html") %>%
+    read_html() %>%
+    html_elements("a tt") %>%
+    html_text() %>%
+    str_subset("\\d{4}") %>%
+    str_remove("/") %>%
+    as.numeric() %>%
+    tibble(file = hycom_url, year = .) %>%
+    filter(year >= min_year) %>% # filter year
+    mutate(file_yr = glue("{file}{year}/")) %>%
+    mutate(
+      file_day = map(
+        file_yr,
+        \(.file) {
+          paste0(.file, "catalog.html") %>%
+            read_html() %>%
+            html_element("body") %>%
+            html_table() %>%
+            pull(1) %>%
+            str_subset( 
+              glue_collapse(glue("{hours_of_day}_3z\\.nc"), sep = "|")
+              ) %>%
+            str_subset(glue("{hours_of_day}_3z\\.nc")) %>%
+            tibble(file = .file, day = .) %>%
+            mutate(
+              part_url = str_extract(file, "datasets/GO.*"),
+              file_day = paste0(file, "catalog.html?dataset=", part_url, day)
+            )
+        }
+      )
+    ) %T>%
+    print()
+  
+  # ---- search the file URL for download
+  extract_file_location <-
+    search_individual_files %>%
+    unnest(file_day, names_sep = "_") %T>%
+    print() %>%
+    mutate(
+      info = map(
+        file_day_file_day,
+        \(.path) {
+          .path %>%
+            read_html() %>%
+            html_element("body") %>%
+            html_element("ol") %>%
+            html_text() %>%
+            str_extract("NetcdfSubset.*\\.nc") %>%
+            str_remove("NetcdfSubset:.*//") %>%
+            paste0("https://", ., "/dataset.html")
+        }
+      )
+    ) %>%
+    unnest(info) %T>%
+    print()
+  
+  # ---- extract date from file URL
+  extract_date_location <-
+    extract_file_location %>%
+    mutate(
+      date = map(
+        info,
+        \(.path) {
+          .path %>%
+            read_html() %>%
+            html_element("body") %>%
+            html_elements("h3 span") %>%
+            html_text() %>%
+            str_subset("\\d{4}.*") %>%
+            str_replace_all(":", "%3A")
+        }
+      )
+    ) %>%
+    unnest(date) %T>%
+    print()
+  
+  # ---- setup final url before adding constants
+  final_download_info <-
+    extract_date_location %>%
+    mutate(
+      .keep = "used",
+      date,
+      final_path =
+        str_remove(info, "grid/") %>%
+        str_replace("/dataset.html", "?"),
+      final_path = paste0(
+        final_path,
+        specifics
+      ),
+      file_name = paste0("hycom_", str_remove(date, "T.*"), ".nc4"),
+      file_name = str_replace_all(file_name, "-", "_")
+    ) %T>%
+    print()
+  
+  unshelf(rvest)
+  
+  return(final_download_info)
+  
+  # ---- end of function hycom_search
+} 
