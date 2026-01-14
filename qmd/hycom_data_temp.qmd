@@ -1,0 +1,643 @@
+---
+title: "Modeled Currents"
+author: "Sebastian Di Geronimo"
+date: 2025-08-06
+format: html
+editor: source
+---
+
+# 1.0 ---- Summary of Document ----
+
+Host Website: <https://www.hycom.org/>
+Catalog: <https://ncss.hycom.org/thredds/catalog.html>
+Forum for HYCOM: <https://groups.google.com/a/hycom.org/g/forum>
+- help documents
+
+## HYCOM-TSIS 1/100º Gulf of Mexico Reanalysis
+
+<https://www.hycom.org/data/gomb0pt01/gom-reanalysis>
+
+Uses Tendral Statistical Interpolation (T-SIS) package to get high resolution
+(Srinivasan et al., 2022, www.tendral.com/tsis). multivariate linear statistical 
+estimation given a predicted ocean state and observations
+
+Assimilates
+- SLA (T/P, JASON 1 and 2, Envisat, GFO and Cyrosat)
+- SST (GHRSST and AVHRR)
+- Temp/salinity from ARGO floats
+
+
+Hourly 2001-01-01 to "Present" (2-3 month delay)
+- 40 depth layers
+- velocity in u, v 
+- vertical velocity in w
+
+For addtional documentation:
+<https://www.hycom.org/hycom/documentation>
+
+
+## HYCOM and NCODA Gulf of Mexico 1/25° Analysis
+This is some information about a higher resolution model from HYCOM and NCODA
+<https://portal.secoora.org/#module-metadata/8bc4c4e7-ddbb-462e-a07c-c0e0d5fbeb3f>
+
+Hourly from 2017 - Jan 2023 at 1/25°
+Variables:
+- sea water velocity
+- water surface elevation
+- salinity
+- water temperature
+
+
+## CNAPS
+
+Coupled Northwest Atlantic Prediction System
+May 1, 2016 20:00 (EDT) - Jul 2, 2019 17:00 (EDT)
+3 hours
+<https://portal.secoora.org/#metadata/4bc223e1-6b14-46f5-9832-f8e9ff061a36/13cee4ae-2d36-454c-a6bc-1dcc223d819c>
+Variables:
+- northward velocity
+- bottom U-momentum stress
+- bottom V-momentum stress
+- currents
+- eastward velocity
+- evaporation rate
+- free surface
+- net latent heat flux
+- net longwave radiation flux
+- net sensible heat flux
+- potential temperature
+- rain fall rate
+- salinity
+- solar shortwave radiation flux
+- surface net heat flux
+- surface net salt flux
+- surface U-momentum stress
+- surface V-momentum stress
+- vertical momentum component
+- wind induced mean wavelength
+- wind induced significant wave height
+- wind induxed wave direction
+
+
+## SABGOM
+South Atlantic Bight and Gulf of Mexico
+Apr 29, 2016 20:00 (EDT) - Dec 25, 2017 19:00 (EST)
+3 hours
+<https://portal.secoora.org/#metadata/9cf0615d-948a-46f8-ad4b-73c887b9eaa3/ab6cb99f-ed82-46cd-a0c7-cf1b2069adfc>
+incorporating the ROMS model for circulation, the WRF model for atmospheric 
+circulation, the SWAN model for surface waves
+
+
+
+
+# 2.0 ---- Setup ----
+
+
+## 2.1 Load Libraries
+
+```{r setup, include=FALSE}
+if (!nzchar(system.file(package = "librarian"))) 
+  install.packages("librarian")
+
+librarian::shelf(
+  quiet = TRUE,
+  librarian, conflicted, ggplot2, tibble, tidyr, readr, purrr, dplyr, stringr,
+  forcats, lubridate, glue, fs, magrittr, here,
+  
+  # additional
+  ncdf4
+)
+
+conflicts_prefer(
+  dplyr::filter(), 
+  dplyr::select(),
+  tidyr::extract()
+  )
+  
+
+```
+
+## 2.2 Cruise Dates
+
+```{r ctd-dates}
+source(here("R", "aviso_functions.R"))
+# minimum year to extract from
+min_year <- 2015
+hours_of_day <- 12
+
+# previous days to load from last CTD data
+prev_day <- 14
+
+if (exists("cloud_dir")) {
+  min_max_date <-
+    here(cloud_dir, "data", "raw") %>%
+    dir_ls(regexp = "ctd_min_max_date")  %>%
+    read_csv(show_col_types = FALSE) %>% 
+    mutate(
+      year = year(max_time)
+    )  %T>%
+    print()
+} else {
+  min_max_date <-
+    rstudioapi::selectFile() %>%
+    read_csv(show_col_types = FALSE) %>% 
+    mutate(
+      year = year(max_time)
+    ) %T>%
+    print()
+} 
+
+
+cruise_ids <- c("WS16004", "WS17030", "WS17212", "WS18008", "WS20342", "WS21212")
+
+min_max_date <- 
+  min_max_date %>% 
+  filter(year >= min_year) %>% # start of HYCOM data
+  # filter(year %in% c(2016:2018)) %>%
+  # filter(cruise_id %in% cruise_ids) %>% 
+  # slice(1:3) %>% 
+  pull(max_time) %>% 
+  
+  # add all dates from max date minus x days
+  map(
+    \(.x) {
+      as_date((.x-days(prev_day)):.x)
+    }
+  ) %>% 
+  list_c() %T>% 
+  print()
+```
+
+
+# 3.0 Download HYCOM-TSIS Data 
+
+Info: <https://www.hycom.org/data/gomb0pt01/gom-reanalysis>
+From: <https://tds.hycom.org/thredds/catalog/datasets/GOMb0.01/reanalysis/data/catalog.html>
+
+Help for download flags: <https://docs.unidata.ucar.edu/tds/current/userguide/ncss_grid.html>
+- dateTime has the form: '-'? yyyy '-' mm '-' dd 'T' hh ':' mm ':' ss ('.' s+)? (zzzzzz)?
+
+Base URL:
+https://ncss.hycom.org/thredds/ncss/datasets/GOMb0.01/reanalysis/data/YYYY/xxx_archv.YYYY_DDD_HH_NN.nc
+
+Experiment Numbers:
+This part `xxx_archv.YYYY_DDD_HH_NN.nc` is described here
+xxx: experiment number (i.e. 010, 023 or 026 for date ranges)
+YYYY: year
+DDD: day (julian day)
+HH: hour
+NN: Netcdf type (i.e. 2d (surface) or 3z (with depth))
+
+HYCOM-TSIS GOMb0.01:
+010_archv.YYYY_DDD_HH_NN.nc: 2001_001_00 to 2017_152_18
+023_archv.YYYY_DDD_HH_NN.nc: 2017_152_19 to 2024_032_18
+026_archv.YYYY_DDD_HH_NN.nc: 2024_001_19 to *PRESENT*
+
+
+Parameters used in link for 3z:
+- variables
+  - var=salinity&
+  - var=u&
+  - var=v&
+  - var=w_velocity&
+  - var=water_temp
+- lat/lon
+  - north=26.4375&
+  - west=-83.8125&
+  - east=-78.3125&
+  - south=22.8125
+- horizStride=1
+  - number of data points to skip along horiztonal (x and y)
+- vertStride=1
+  - number of data points to skip along vertical (z)
+- time=2017-01-02T10%3A01%3A52.500Z
+  - yyyy-mm-ddThh:mm::ss
+  - %3A is : (colon in URL encoding)
+- vertCoord=0.0
+  - single level 0.0, 2.0, 4.0, ..., 5000 m
+
+- accept=netcdf4
+  - type of netcdf (netcdf or netcdf4)
+
+
+Depth options (40): 
+  0.0 2.0 4.0 6.0 8.0 10.0 12.0 15.0 20.0 25.0 30.0 35.0 40.0 45.0 
+  50.0 60.0 70.0 80.0 90.0 100.0 125.0 150.0 200.0 250.0 300.0 350.0 400.0 
+  500.0 600.0 700.0 800.0 900.0 
+  1000.0 1250.0 1500.0 2000.0 2500.0 3000.0 4000.0 5000.0
+
+
+## 3.1 Constants
+```{r constants}
+# ---- catalog url ---- #
+hycom_url <- "https://tds.hycom.org/thredds/catalog/datasets/GOMb0.01/reanalysis/data/"
+
+# ---- constants ---- #
+vert    <- format(0, nsmall = 1) # depth
+horizon <- 1 # number of data points to skip, this save data space
+
+# lon
+xmin    <- -83.8125 
+xmax    <- -78.3125
+# lat
+ymin    <- 22.8125
+ymax    <- 26.4375
+```
+
+## 3.2 Search HYCOM For Data Files
+
+This search only needs to happen once to get the file name. 
+
+To subset the data, change the info in constants 
+
+```{r search-hycom}
+if (exists("cloud_dir")) {
+  hycom_info <-
+    here(
+      cloud_dir,
+      "data",
+      "hycom_100deg_download_instructions.csv"
+      )
+} else {
+  hycom_info <- 
+    here(
+    rstudioapi::selectDirectory(),
+    "data",
+    "hycom_100deg_download_instructions.csv"
+  )
+}
+
+
+if (!file_exists(hycom_info)) {
+  shelf(rvest)
+  # specific url base for searching the database
+  specifics <-
+    paste0(
+      "var=salinity&var=u&var=v&var=w_velocity&var=water_temp&",
+      "north={ymax}&west={xmin}&east={xmax}&south={ymin}&",
+      "disableProjSubset=on&",
+      "horizStride={horizon}&",
+      "time={date}&",
+      "vertCoord={vert}&accept=netcdf4"
+    )
+
+
+  # ---- web searching ---- #
+
+  # ---- search URL for every file
+  # selection based on minimum year and hour od day
+  search_individual_files <-
+    paste0(hycom_url, "catalog.html") %>%
+    read_html() %>%
+    html_elements("a tt") %>%
+    rvest::html_text() %>%
+    str_subset("\\d{4}") %>%
+    str_remove("/") %>%
+    as.numeric() %>%
+    tibble(file = hycom_url, year = .) %>%
+    filter(year >= min_year) %>% # filter year
+    mutate(file_yr = glue("{file}{year}/")) %>%
+    mutate(
+      file_day = map(
+        file_yr,
+        \(.file) {
+          paste0(.file, "catalog.html") %>%
+            read_html() %>%
+            html_element("body") %>%
+            html_table() %>%
+            pull(1) %>%
+            str_subset(glue("{hours_of_day}_3z\\.nc")) %>%
+            tibble(file = .file, day = .) %>%
+            mutate(
+              part_url = str_extract(file, "datasets/GO.*"),
+              file_day = paste0(file, "catalog.html?dataset=", part_url, day)
+            )
+        }
+      )
+    ) %T>%
+    print()
+
+  # ---- search the file URL for download
+  extract_file_location <-
+    search_individual_files %>%
+    unnest(file_day, names_sep = "_") %T>%
+    print() %>%
+    # slice(1, .by = year) %>%
+    mutate(
+      info = map(
+        file_day_file_day,
+        \(.path) {
+          .path %>%
+            read_html() %>%
+            html_element("body") %>%
+            html_element("ol") %>%
+            html_text() %>%
+            str_extract("NetcdfSubset.*\\.nc") %>%
+            str_remove("NetcdfSubset:.*//") %>%
+            paste0("https://", ., "/dataset.html")
+        }
+      )
+    ) %>%
+    unnest(info) %T>%
+    print()
+
+  # ---- extract date from file URL
+  extract_date_location <-
+    extract_file_location %>%
+    mutate(
+      date = map(
+        info,
+        \(.path) {
+          .path %>%
+            read_html() %>%
+            html_element("body") %>%
+            html_elements("h3 span") %>%
+            html_text() %>%
+            str_subset("\\d{4}.*") %>%
+            str_replace_all(":", "%3A")
+        }
+      )
+    ) %>%
+    unnest(date) %T>%
+    print()
+
+  # ---- setup final url before adding constants
+  final_download_info <-
+    extract_date_location %>%
+    mutate(
+      .keep = "used",
+      date,
+      final_path =
+        str_remove(info, "grid/") %>%
+          str_replace("/dataset.html", "?"),
+      final_path = paste0(
+        final_path,
+        specifics
+      ),
+      file_name = paste0("hycom_", str_remove(date, "T.*"), ".nc4"),
+      file_name = str_replace_all(file_name, "-", "_")
+    ) %T>%
+    print()
+  
+  # ---- write final info to file to save time
+  write_csv(final_download_info, hycom_info)
+  
+  unshelf(rvest)
+  
+} else {
+  
+  final_download_info <- read_csv(hycom_info, show_col_types = FALSE)
+}
+
+
+```
+
+
+## 3.3 Download HYCOM-TSIS Data
+
+
+
+
+Find file with all URLs to HYCOM Data
+
+```{r download-hycom}
+if (exists("cloud_dir")) {
+  dwnld_path <- here(cloud_dir, "data", "raw", "hycom")
+} else {
+  dwnld_path <- here("data", "raw", "hycom")
+}
+
+dir_create(dwnld_path)
+
+# apply final search parameters
+path_save <- 
+  final_download_info %>%
+  mutate(
+    final_path = map2_chr(
+      final_path,
+      date,
+      \(final, date) {
+        glue(final)
+      }
+    )
+  ) %T>%
+  print()
+```
+
+### 3.3.2
+
+```{r single-download}
+path_save %>% 
+  mutate(date2 = str_remove(date, "T.*") %>% ymd()) %$%
+  # filter dates
+  # filter(date2 %in% min_max_date) %$%
+  # slice(1500:1502) %$%
+  walk2(
+    final_path,
+    file_name,
+    \(.url, .file_name) {
+      print(.url)
+      cat("\n\n\n")
+      print(.file_name)
+      
+      if (file_exists(here(dwnld_path, .file_name))) {
+         message("File exists. Returning.")
+         return()
+      }
+      
+      download.file(
+        url      = .url,
+        destfile = here(dwnld_path, .file_name),
+        method   = "curl"
+      )
+    }
+  )
+
+```
+
+
+### 3.3.3 Parallel Download
+
+May parallel download data if have access to the `furrr` and `progressr`
+
+```{r parallel-download}
+if (FALSE) {
+  shelf(progressr, furrr)
+  plan(multisession, workers = 5)
+  
+  
+  filt_download <-  
+    # filter dates
+    path_save %>%
+    mutate(date2 = str_remove(date, "T.*") %>% ymd()) %T>%
+    # filter(date2 %in% min_max_date) %$%
+    # slice(1:500) %T>% 
+    print()
+  
+  with_progress({
+    
+    p <- progressor(steps = nrow(filt_download))
+    
+    filt_download %$%
+      future_walk2(
+        final_path,
+        file_name,
+        \(.url, .file_name) {
+          p()
+          print(.url)
+          cat("\n\n\n")
+          print(.file_name)
+           if (file_exists(here(dwnld_path, .file_name))) {
+             message("File exists. Returning.")
+             return()
+           }
+           
+           download.file(
+             url      = .url,
+             destfile = here(dwnld_path, .file_name),
+             method   = "curl"
+           )
+          },
+          .progress = TRUE)
+  })
+}
+```
+
+# 4.0 Load Dataset
+
+```{r load-data}
+# local storage
+hycom_path <- here("data", "raw", "hycom") %>%
+  dir_ls() %T>% 
+  print()
+
+# cloud storage
+hycom_path <- here(cloud_dir,"data", "raw", "hycom") %>%
+  dir_ls() %T>% 
+  {
+  sample(., 10) %>% print()
+  }
+
+# hycom_path <- rstudioapi::selectFile(path = here("..", "misc_ideas", "data", "raw", "hycom"))
+
+```
+
+
+```{r}
+
+shelf(terra)
+```
+
+
+```{r}
+hycom_dat <- ncdf4::nc_open(hycom_path[10])
+
+hycom_dat
+names(hycom_dat)
+hycom_dat$var %>%
+  names()
+names(hycom_dat$dim)
+
+if (length(ncvar_get(hycom_dat, "Depth")) > 1) {
+  # if multiple depths
+  message("HYCOM data has multiple depths (m).")
+  hycom_u <- ncvar_get(hycom_dat, "u")[, , 1]
+  hycom_v <- ncvar_get(hycom_dat, "v")[, , 1]
+} else {
+  # if single depth
+  message("HYCOM data has one depth (m).")
+  hycom_u <- ncvar_get(hycom_dat, "u") 
+  hycom_v <- ncvar_get(hycom_dat, "v") 
+}
+
+lat  <- ncvar_get(hycom_dat, "Latitude")
+lon  <- ncvar_get(hycom_dat, "Longitude")
+
+ # create grid data
+      hycom_grid <-
+        expand.grid(lon = lon, lat = lat) %>%
+        mutate(
+          # adt     = as.vector(adt), # absolute dynamic topography
+          hycom_v    = as.vector(hycom_v), # north geostrophic velocity
+          hycom_u    = as.vector(hycom_u), # east geostrophic velocity
+          vel_mag = sqrt(hycom_v^2 + hycom_u^2) # calculate current velocity
+        )
+
+      # dat_grid_temp[[i]] <- ssh_grid
+
+ncvar_get(hycom_dat, "MT") %>% 
+  lubridate::as_date(origin = "1900-12-31")
+  
+
+nc_close(hycom_dat)
+```
+
+```{r}
+list(hycom_grid) %>%
+  rast(crs = "EPSG:4326")
+
+hycom_grid %>%
+      
+  rast()
+
+unique(hycom_grid$lon)
+unique(hycom_grid$lat)
+```
+
+```{r}
+for (paths in hycom_path[1]) {
+  
+hy2 <- hycom_load(paths)
+# hy2 <- hycom_load(hycom_path[1])
+
+slice_by <- 200
+length_divide <-  2
+vel_vect <- slice(hy2$tibble, seq(1, n(), by = slice_by))
+
+xlim <- range(hy2$tibble$lon)
+ylim <- range(hy2$tibble$lat)
+
+# ggplot() +
+#   geom_tile(data = hycom_grid, aes(x = lon, y = lat, fill = vel_mag)) +
+#   # scale_fill_
+#   theme_bw() +
+#   coord_cartesian(expand = FALSE)
+plt <- ggplot() +
+  geom_tile(data = hy2$tibble, aes(x = lon, y = lat, fill = vel_mag)) +
+    # velocity vectors
+  geom_segment(
+    data = vel_vect,
+    aes(
+      x     = lon, 
+      xend  = lon + hycom_u/length_divide, 
+      y     = lat, 
+      yend  = lat + hycom_v/length_divide, 
+      color = vel_mag
+      ),
+    arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
+    linewidth = 0.25,                              # adjust arrow thickness
+    na.rm     = TRUE
+  ) +
+  # scale_fill_
+  theme_bw() +
+  facet_wrap(~date) +
+  scale_fill_viridis_b(breaks = c(0.25, seq(0, 2, by = 0.5))) +
+  scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
+  coord_cartesian(expand = FALSE, ylim = ylim, xlim = xlim)
+print(plt)
+}
+shelf(camcorder)
+camcorder::gg_record(here("data", "plots", "camcorder2"))
+camcorder::gg_stop_recording()
+camcorder::gg_playback(frame_duration = 0.7)
+```
+
+```{r}
+hycom_grid %>%
+  filter(between(lat, 22.57, 22.58))  %>%
+   ggplot() +
+  geom_tile(data = hycom_grid, aes(x = lon, y = lat, fill = vel_mag)) +
+  # scale_fill_
+  theme_bw()
+```
+
