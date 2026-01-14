@@ -105,7 +105,7 @@ librarian::shelf(
   forcats, lubridate, glue, fs, magrittr, here,
   
   # additional
-  ncdf4, sf
+  ncdf4, sf, metR, tidyterra, oce
 )
 
 conflicts_prefer(
@@ -118,6 +118,59 @@ shelf(terra)
 
 source(here("R", "aviso_functions.R"))
 ```
+
+## 2.2 Cruise Dates
+
+```{r ctd-dates}
+source(here("R", "aviso_functions.R"))
+# minimum year to extract from
+min_year <- 2015
+hours_of_day <- c(12, 23)
+
+# previous days to load from last CTD data
+prev_day <- 14
+
+if (exists("cloud_dir")) {
+  min_max_date <-
+    here(cloud_dir, "data", "raw") %>%
+    dir_ls(regexp = "ctd_min_max_date")  %>%
+    read_csv(show_col_types = FALSE) %>% 
+    mutate(
+      year = year(max_time)
+    )  %T>%
+    print()
+} else {
+  min_max_date <-
+    rstudioapi::selectFile() %>%
+    read_csv(show_col_types = FALSE) %>% 
+    mutate(
+      year = year(max_time)
+    ) %T>%
+    print()
+} 
+
+
+cruise_ids <- c("WS16004", "WS17030", "WS17212", "WS18008", "WS20342", "WS21212")
+
+min_max_date <- 
+  min_max_date %>% 
+  filter(year >= min_year) %>% # start of HYCOM data
+  # filter(year %in% c(2016:2018)) %>%
+  # filter(cruise_id %in% cruise_ids) %>% 
+  # slice(1:3) %>% 
+  pull(max_time) %>% 
+  
+  # add all dates from max date minus x days
+  map(
+    \(.x) {
+      as_date((.x-days(prev_day)):.x)
+    }
+  ) %>% 
+  list_c() %T>% 
+  print()
+```
+
+
 
 # 3.0 ---- Download HYCOM-TSIS Data ----
 
@@ -233,10 +286,6 @@ if (!file_exists(hycom_info)) {
       "vertCoord={vert}&accept=netcdf4"
     )
 
-  # minimum year to extract from
-  min_year <- 2015
-  hours_of_day <- c(12, 23)
-
   # ---- web searching ---- #
 
   # ---- search URL for every file
@@ -350,34 +399,7 @@ if (!file_exists(hycom_info)) {
 
 ## 3.3 Download HYCOM-TSIS Data
 
-### 3.3.1 Extract Dates from Selected Cruises
-
-```{r}
-min_max_date <-
-  rstudioapi::selectFile() %>% 
-  read_csv(show_col_types = FALSE)
-
-cruise_ids <- c("WS16004", "WS17030", "WS17212", "WS18008", "WS20342", "WS21212")
-min_max_date <-
-  min_max_date %>%
-  mutate(year = year(max_time)) %>%
-  # filter(year %in% c(2016:2018)) %>%
-  filter(cruise_id %in% cruise_ids) %>%
-  # slice(1:3) %>%
-  pull(max_time) %>%
-  map(
-    \(.x) {
-      as_date((.x - days(7)):.x)
-    }
-<<<<<<< HEAD
-  ) %>%
-  list_c()
-=======
-  ) %>% 
-  list_c() %T>% 
-  print()
->>>>>>> d3282fa6c94629532ff5a5f1291cb1f66a5d605b
-```
+Find file with all URLs to HYCOM Data
 
 ```{r download-hycom}
 if (exists("cloud_dir")) {
@@ -401,10 +423,14 @@ path_save <-
     )
   ) %T>%
   print() 
+```
 
-# filter dates
+### 3.3.2
+
+```{r single-download}
 path_save %>% 
   mutate(date2 = str_remove(date, "T.*") %>% ymd()) %$%
+  # filter dates
   # filter(date2 %in% min_max_date) %$%
   # slice(1500:1502) %$%
   walk2(
@@ -430,66 +456,70 @@ path_save %>%
 
 ```
 
+### 3.3.3 Parallel Download
 
-<<<<<<< HEAD
-# 4.0 ---- Load Dataset ----
-=======
-```{r}
-shelf(progressr, furrr)
-```
+May parallel download data if have access to the `furrr` and `progressr`
 
 ```{r parallel-download}
-plan(multisession, workers = 5)
-
-
-filt_download <-  
-  # filter dates
-  path_save %>%
-  mutate(date2 = str_remove(date, "T.*") %>% ymd()) %T>%
-  # filter(date2 %in% min_max_date) %$%
-  # slice(1:500) %T>% 
-  print()
-
-with_progress({
+if (FALSE) {
+  shelf(progressr, furrr)
+  plan(multisession, workers = 5)
   
-  p <- progressor(steps = nrow(filt_download))
   
-  filt_download %$%
-    future_walk2(
-      final_path,
-      file_name,
-      \(.url, .file_name) {
-        p()
-        print(.url)
-        cat("\n\n\n")
-        print(.file_name)
-         if (file_exists(here(dwnld_path, .file_name))) {
-           message("File exists. Returning.")
-           return()
-         }
-         
-         download.file(
-           url      = .url,
-           destfile = here(dwnld_path, .file_name),
-           method   = "curl"
-         )
-        },
-        .progress = TRUE)
-})
-
+  filt_download <-  
+    # filter dates
+    path_save %>%
+    mutate(date2 = str_remove(date, "T.*") %>% ymd()) %T>%
+    # filter(date2 %in% min_max_date) %$%
+    # slice(1:500) %T>% 
+    print()
+  
+  with_progress({
+    
+    p <- progressor(steps = nrow(filt_download))
+    
+    filt_download %$%
+      future_walk2(
+        final_path,
+        file_name,
+        \(.url, .file_name) {
+          p()
+          print(.url)
+          cat("\n\n\n")
+          print(.file_name)
+           if (file_exists(here(dwnld_path, .file_name))) {
+             message("File exists. Returning.")
+             return()
+           }
+           
+           download.file(
+             url      = .url,
+             destfile = here(dwnld_path, .file_name),
+             method   = "curl"
+           )
+          },
+          .progress = TRUE)
+  })
+}
 ```
 
+
 # 4.0 Load Dataset
->>>>>>> d3282fa6c94629532ff5a5f1291cb1f66a5d605b
 
 ```{r load-data}
+# local storage
 hycom_path <- here("data", "raw", "hycom") %>%
   dir_ls() %T>% 
   print()
 
-# hycom_path <- rstudioapi::selectFile(path = here("..", "misc_ideas", "data", "raw", "hycom"))
-hycom_path <- rstudioapi::selectDirectory(path = here("..", "misc_ideas", "data", "raw", "hycom"))
+# cloud storage
+hycom_path <- here(cloud_dir, "data", "raw", "hycom") %>%
+  dir_ls() %T>% {
+    print(length(.))
+    sample(., 10) %>% print()
+  }
 
+# hycom_path <- rstudioapi::selectFile(path = here("..", "misc_ideas", "data", "raw", "hycom"))
 ```
 
 ## Load Coast
@@ -583,7 +613,7 @@ mapview::mapview(linestring)
 
 ```{r terra}
 hycom_paths <- 
-  hycom_path %>%
+  hycom_path[1] %>%
   dir_ls() %T>% 
   print() 
 
@@ -605,7 +635,7 @@ for (paths in hycom_paths) {
   # add velocity magnitude
   hy_rast <-
     hy_rast %>%
-    mutate(vel_mag = sqrt(u^2 + v^2))
+    tidyterra::mutate(vel_mag = sqrt(u^2 + v^2))
 
   # add date to all layers
   terra::time(hy_rast) <- rep(hy_date, nlyr(hy_rast))
@@ -632,10 +662,10 @@ for (paths in hycom_paths) {
     geom_sf(data = coast) +
     
     # transect lines
-    geom_sf(data = linestring, color = "red", alpha = 0.5) +
+    # geom_sf(data = linestring, color = "red", alpha = 0.5) +
 
     # velocity vectors
-    geom_arrow(
+    metR::geom_arrow(
       data = hy_dat,
       skip = 10,
       aes(
@@ -745,10 +775,10 @@ nc_close(hycom_dat)
 ```
 
 ```{r netcdf4-multi}
-hycom_paths <- 
-  hycom_path %>%
-  dir_ls() %T>% 
-  print() 
+# hycom_paths <- 
+#   hycom_path %>%
+#   dir_ls() %T>% 
+#   print() 
 
 
 hy2 <- hycom_load(hycom_paths[1])
@@ -759,7 +789,7 @@ slice_by <- 200
 # length of arrows
 length_divide <-  2
 
-for (paths in hycom_path) {
+for (paths in hycom_path[1]) {
   # load hycom data
   hy2 <- hycom_load(paths)
   # hy2 <- hycom_load(hycom_path[1])
@@ -822,10 +852,10 @@ for (paths in hycom_path) {
   print(plt)
 }
 
-shelf(camcorder)
-camcorder::gg_record(here("data", "plots", "camcorder2"))
-camcorder::gg_stop_recording()
-camcorder::gg_playback(frame_duration = 0.7)
+# shelf(camcorder)
+# camcorder::gg_record(here("data", "plots", "camcorder2"))
+# camcorder::gg_stop_recording()
+# camcorder::gg_playback(frame_duration = 0.7)
 ```
 
 
@@ -834,7 +864,7 @@ camcorder::gg_playback(frame_duration = 0.7)
 Streamlines show steady field as in where is the water going 
 
 ```{r}
-shelf(metR)
+shelf(metR, tidyterra)
 ggplot() +
 geom_streamline(data = hy2$tibble, 
                         aes(x = lon, y = lat, dx = hycom_u, dy = hycom_v, 
