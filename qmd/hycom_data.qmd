@@ -102,7 +102,7 @@ librarian::shelf(
   forcats, lubridate, glue, fs, magrittr, here,
   
   # additional
-  ncdf4
+  ncdf4, sf
 )
 
 conflicts_prefer(
@@ -111,10 +111,12 @@ conflicts_prefer(
   tidyr::extract()
   )
   
+shelf(terra)
 
+source(here("R", "aviso_functions.R"))
 ```
 
-# 3.0 Download HYCOM-TSIS Data 
+# 3.0 ---- Download HYCOM-TSIS Data ----
 
 Info: <https://www.hycom.org/data/gomb0pt01/gom-reanalysis>
 From: <https://tds.hycom.org/thredds/catalog/datasets/GOMb0.01/reanalysis/data/catalog.html>
@@ -181,12 +183,14 @@ hycom_url <- "https://tds.hycom.org/thredds/catalog/datasets/GOMb0.01/reanalysis
 vert    <- format(0, nsmall = 1) # depth
 horizon <- 1 # number of data points to skip, this save data space
 
-# lon
-xmin    <- -83.8125 
-xmax    <- -78.3125
-# lat
-ymin    <- 22.8125
-ymax    <- 26.4375
+lat_lon <- list(
+  # long
+  "xmin" = -83.8125,
+  "xmax" = -78.3125,
+  #lat
+  "ymin" = 22.8125,
+  "ymax" = 26.4375
+)
 ```
 
 ## 3.2 Search HYCOM For Data Files
@@ -212,14 +216,14 @@ if (exists(cloud_dir)) {
   )
 }
 
-
+# TODO: replace search with function `hycom_search()`
 if (!file_exists(hycom_info)) {
   shelf(rvest)
   # specific url base for searching the database
   specifics <-
     paste0(
       "var=salinity&var=u&var=v&var=w_velocity&var=water_temp&",
-      "north={ymax}&west={xmin}&east={xmax}&south={ymin}&",
+      "north={lat_lon$ymax}&west={lat_lon$xmin}&east={lat_lon$xmax}&south={lat_lon$ymin}&",
       "disableProjSubset=on&",
       "horizStride={horizon}&",
       "time={date}&",
@@ -228,7 +232,7 @@ if (!file_exists(hycom_info)) {
 
   # minimum year to extract from
   min_year <- 2015
-  hours_of_day <- 12
+  hours_of_day <- c(12, 23)
 
   # ---- web searching ---- #
 
@@ -238,7 +242,7 @@ if (!file_exists(hycom_info)) {
     paste0(hycom_url, "catalog.html") %>%
     read_html() %>%
     html_elements("a tt") %>%
-    rvest::html_text() %>%
+    html_text() %>%
     str_subset("\\d{4}") %>%
     str_remove("/") %>%
     as.numeric() %>%
@@ -342,28 +346,28 @@ if (!file_exists(hycom_info)) {
 
 
 ## 3.3 Download HYCOM-TSIS Data
+
+### 3.3.1 Extract Dates from Selected Cruises
+
 ```{r}
 min_max_date <-
   rstudioapi::selectFile() %>% 
   read_csv(show_col_types = FALSE)
 
 cruise_ids <- c("WS16004", "WS17030", "WS17212", "WS18008", "WS20342", "WS21212")
-
-min_max_date <- 
-  min_max_date %>% 
-  mutate(
-    year = year(max_time)
-  ) %>% 
-  # filter(year %in% c(2016:2018)) %>% 
-  filter(cruise_id %in% cruise_ids) %>% 
-  # slice(1:3) %>% 
-  pull(max_time) %>% 
+min_max_date <-
+  min_max_date %>%
+  mutate(year = year(max_time)) %>%
+  # filter(year %in% c(2016:2018)) %>%
+  filter(cruise_id %in% cruise_ids) %>%
+  # slice(1:3) %>%
+  pull(max_time) %>%
   map(
     \(.x) {
-      as_date((.x-days(7)):.x)
+      as_date((.x - days(7)):.x)
     }
-  ) %>% 
-  list_c() 
+  ) %>%
+  list_c()
 ```
 
 ```{r download-hycom}
@@ -418,7 +422,7 @@ path_save %>%
 ```
 
 
-# 4.0 Load Dataset
+# 4.0 ---- Load Dataset ----
 
 ```{r load-data}
 hycom_path <- here("data", "raw", "hycom") %>%
@@ -426,18 +430,221 @@ hycom_path <- here("data", "raw", "hycom") %>%
   print()
 
 # hycom_path <- rstudioapi::selectFile(path = here("..", "misc_ideas", "data", "raw", "hycom"))
+hycom_path <- rstudioapi::selectDirectory(path = here("..", "misc_ideas", "data", "raw", "hycom"))
+
+```
+
+## Load Coast
+
+```{r coast}
+# bounding box
+lat_lon <- list(
+  # long
+  "xmin" = -83.8125,
+  "xmax" = -78.3125,
+  #lat
+  "ymin" = 22.8125,
+  "ymax" = 26.4375
+)
+
+# load coastline
+coast <-
+  rnaturalearth::ne_coastline(10, returnclass = "sf") %>%
+  st_crop(st_bbox(unlist(lat_lon)))
+coast
+
+ggplot() +
+  geom_sf(data = coast) +
+  coord_sf(expand = FALSE) +
+  theme_bw()
 
 ```
 
 
-```{r}
+## Create Transects
 
-shelf(terra)
+This is created manually upon first instance if `transect2.shp` doesn't exist.
+
+The points from the SFER/MBON cruise are load and the Florida Keys locations
+are extracted. Then manual creation of transects are done. 
+
+
+```{r create-load-transects}
+# set paths to save shapefiles, and animations
+shp_save <- here("data", "raw", "shapefiles")
+dir_create(shp_save)
+
+transect_file <- here(shp_save, "transects2.shp")
+
+# stations_path <- rstudioapi::selectFile() 
+stations_path <- 
+  here("data", "raw") %>%
+  dir_ls(regexp = "station_info")
+
+station <- 
+  readxl::read_excel(
+    stations_path, 
+    .name_repair = janitor::make_clean_names
+  ) %>%
+  filter(str_detect(geo_loc_name, "(?i)florida keys") & !str_detect(line_id, "PL")) %>%
+  select(station_id, station_class, "lon" = mean_lon, "lat" = mean_lat, line_id)
+
+if (file_exists(transect_file)) {
+  message("Reading transects shapefile")
+  linestring <- st_read(transect_file)
+} else {
+  
+  message("Creating transects.")
+  lyr_name <- grep("vel_mag", names(multi_rast), value = TRUE)[1]
+
+  polyline <-
+    ((mapview::mapView(multi_rast, layer = lyr_name) +
+      mapview::mapview(coast)) +
+      mapview::mapview(station, xcol = "lon", ycol = "lat")
+    ) %>%
+    mapedit::editMap()
+
+  linestring <- polyline$finished
+
+  names(linestring) <- c("id", "type", "geometry")
+
+  message(paste0("Saving transects as `", basename(transect_file), "`."))
+
+  # save shapefile
+  st_write(
+    linestring,
+    transect_file
+  )
+}
+
+mapview::mapview(linestring)
 ```
 
 
-```{r}
-hycom_dat <- ncdf4::nc_open(hycom_path[10])
+## Load Multiple HYCOM-TSIS Data
+
+```{r terra}
+hycom_paths <- 
+  hycom_path %>%
+  dir_ls() %T>% 
+  print() 
+
+for (paths in hycom_paths) {
+  # read netcdf
+  # hy_rast <- rast(hycom_paths[1])
+  hy_rast <- rast(paths)
+
+  # extract date in the format as days since Dec 31, 1990
+  hy_date <-
+    lubridate::as_date(
+      as.numeric(str_extract(names(hy_rast)[1], "MT=(.*)", 1)),
+      origin = as_date("1900-12-31")
+    )
+
+  # rename grids
+  names(hy_rast) <- c("sal", "u", "v", "w", "temp")
+
+  # add velocity magnitude
+  hy_rast <-
+    hy_rast %>%
+    mutate(vel_mag = sqrt(u^2 + v^2))
+
+  # add date to all layers
+  terra::time(hy_rast) <- rep(hy_date, nlyr(hy_rast))
+  
+  # convert spatRaster to data.frame
+  hy_dat <-
+    hy_rast %>%
+    terra::as.data.frame(xy = TRUE, date = hy_date) %>%
+    # rename spatial
+    rename("lon" = x, "lat" = y) %>%
+    relocate(date, .before = 1) %T>% 
+    print()
+
+  # spatial extent for plotting
+  xy_ext <- ext(hy_rast)
+
+  # plot
+  plt <-
+    ggplot() +
+
+    # spatRaster
+    tidyterra::geom_spatraster(data = hy_rast, aes(fill = vel_mag)) +
+    
+    geom_sf(data = coast) +
+    
+    # transect lines
+    geom_sf(data = linestring, color = "red", alpha = 0.5) +
+
+    # velocity vectors
+    geom_arrow(
+      data = hy_dat,
+      skip = 10,
+      aes(
+        x     = lon,
+        dx    = u ,
+        y     = lat,
+        dy    = v,
+        color = vel_mag
+      ),
+      # arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
+      size = 0.25,                              # adjust arrow thickness
+      na.rm = TRUE
+    ) +
+    labs(x = NULL, y = NULL, title = glue("Date: {hy_date}")) +
+    scale_fill_gradientn(
+      name     = "Current",
+      colours  = oceColorsVelocity(120), # edit colors
+      limits   = c(0, 2),
+      breaks   = seq(0.0, 2, 0.25),
+      rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
+      oob      = scales::oob_squish,
+      guide    = guide_colorbar(
+        barwidth       = 0.8,
+        barheight      = 10,
+        title          = expression(Current ~ speed ~ (m ~ s^{-1})),
+        title.position = "right",
+        title.hjust    = 0.5,
+        title.theme    = element_text(angle = 90)
+      )
+    ) +
+    scale_color_gradientn(
+      name     = "Current",
+      colours  = oce.colorsPalette(120), # edit colors
+      limits   = c(0, 2),
+      breaks   = seq(0.0, 2, 0.25),
+      rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
+      oob      = scales::oob_squish,
+      guide    = guide_colorbar(
+        barwidth       = 0.8,
+        barheight      = 10,
+        title          = expression(Velocity ~ magnitude ~ (m ~ s^{-1})),
+        title.position = "right",
+        title.hjust    = 0.5,
+        title.theme    = element_text(angle = 90)
+      )
+    ) +
+    coord_sf(expand = FALSE, ylim = xy_ext[3:4], xlim = xy_ext[1:2]) +
+    theme_bw()
+  print(plt)
+}
+
+# shelf(camcorder)
+camcorder::gg_record(here("data", "plots", "camcorder2_terra2"))
+camcorder::gg_stop_recording()
+camcorder::gg_playback(
+  frame_duration       = 0.7, 
+  first_image_duration = 10,
+  last_image_duration  = 10,
+  last_as_first        = FALSE
+  )
+```
+
+# `ncdf4`: Load One HYCOM-TSIS File 
+
+```{r netcdf4-one}
+# hycom_dat <- ncdf4::nc_open(hycom_path[10])
+hycom_dat <- ncdf4::nc_open(hycom_path)
 
 hycom_dat
 names(hycom_dat)
@@ -479,39 +686,110 @@ ncvar_get(hycom_dat, "MT") %>%
 nc_close(hycom_dat)
 ```
 
-```{r}
-list(hycom_grid) %>%
-  rast(crs = "EPSG:4326")
+```{r netcdf4-multi}
+hycom_paths <- 
+  hycom_path %>%
+  dir_ls() %T>% 
+  print() 
 
-hycom_grid %>%
-      
-  rast()
 
-unique(hycom_grid$lon)
-unique(hycom_grid$lat)
+hy2 <- hycom_load(hycom_paths[1])
+
+# spacing between vectors to plot 
+slice_by <- 200
+
+# length of arrows
+length_divide <-  2
+
+for (paths in hycom_path) {
+  # load hycom data
+  hy2 <- hycom_load(paths)
+  # hy2 <- hycom_load(hycom_path[1])
+  
+  # select subset of data by number of slices
+  vel_vect <- slice(hy2$tibble, seq(1, n(), by = slice_by))
+
+  # extract spatial extent of data
+  xlim <- range(hy2$tibble$lon) # lon
+  ylim <- range(hy2$tibble$lat) # lat
+
+  plt <-
+    ggplot() +
+    geom_tile(data = hy2$tibble, aes(x = lon, y = lat, fill = vel_mag)) +
+    # velocity vectors
+    geom_segment(
+      data = vel_vect,
+      aes(
+        x     = lon,
+        xend  = lon + hycom_u / length_divide,
+        y     = lat,
+        yend  = lat + hycom_v / length_divide,
+        color = vel_mag
+      ),
+      arrow = arrow(length = unit(0.15 / 2, "cm")), # adjust arrow size
+      linewidth = 0.25, # adjust arrow thickness
+      na.rm = TRUE
+    ) +
+    labs(x = NULL, y = NULL) +
+    facet_wrap(~date) +
+    scale_fill_viridis_b(
+      breaks = seq(0, 2, by = 0.25),
+      guide = guide_colorbar(
+        barwidth = 0.8,
+        barheight = 10,
+        title = expression(Velocity ~ magnitude ~ (m ~ s^{
+          -1
+        })),
+        title.position = "right",
+        title.hjust = 0.5,
+        title.theme = element_text(angle = 90)
+      )
+    ) +
+    scale_color_viridis_b(
+      option = "magma",
+      breaks = seq(0, 2, by = 0.25),
+      guide = guide_colorbar(
+        barwidth = 0.8,
+        barheight = 10,
+        title = expression(Velocity ~ magnitude ~ (m ~ s^{
+          -1
+        })),
+        title.position = "right",
+        title.hjust = 0.5,
+        title.theme = element_text(angle = 90)
+      )
+    ) +
+    theme_bw() +
+    coord_cartesian(expand = FALSE, ylim = ylim, xlim = xlim)
+  print(plt)
+}
+
+shelf(camcorder)
+camcorder::gg_record(here("data", "plots", "camcorder2"))
+camcorder::gg_stop_recording()
+camcorder::gg_playback(frame_duration = 0.7)
 ```
 
+
+# WIP: Plot Streamlines
+
+Streamlines show steady field as in where is the water going 
+
 ```{r}
-for (paths in hycom_path) {
-  
-hy2 <- hycom_load(paths)
-# hy2 <- hycom_load(hycom_path[1])
+shelf(metR)
+ggplot() +
+geom_streamline(data = hy2$tibble, 
+                        aes(x = lon, y = lat, dx = hycom_u, dy = hycom_v, 
+                            # color = sqrt(..dx..^2 + ..dy..^2), 
+                            # color = sqrt(after_stat(dx^2) + after_stat(dy^2)), 
+                            # alpha = ..step..
+                            ),
+                      L = 2, res = 2, n = 40, 
+                      arrow = NULL, lineend = "round")
 
-slice_by <- 200
-length_divide <-  2
-vel_vect <- slice(hy2$tibble, seq(1, n(), by = slice_by))
-
-xlim <- range(hy2$tibble$lon)
-ylim <- range(hy2$tibble$lat)
-
-# ggplot() +
-#   geom_tile(data = hycom_grid, aes(x = lon, y = lat, fill = vel_mag)) +
-#   # scale_fill_
-#   theme_bw() +
-#   coord_cartesian(expand = FALSE)
-plt <- ggplot() +
+ggplot() +
   geom_tile(data = hy2$tibble, aes(x = lon, y = lat, fill = vel_mag)) +
-    # velocity vectors
+  # velocity vectors
   geom_segment(
     data = vel_vect,
     aes(
@@ -531,20 +809,262 @@ plt <- ggplot() +
   scale_fill_viridis_b(breaks = c(0.25, seq(0, 2, by = 0.5))) +
   scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
   coord_cartesian(expand = FALSE, ylim = ylim, xlim = xlim)
-print(plt)
-}
-shelf(camcorder)
-camcorder::gg_record(here("data", "plots", "camcorder2"))
-camcorder::gg_stop_recording()
-camcorder::gg_playback(frame_duration = 0.7)
 ```
 
+
 ```{r}
-hycom_grid %>%
-  filter(between(lat, 22.57, 22.58))  %>%
-   ggplot() +
-  geom_tile(data = hycom_grid, aes(x = lon, y = lat, fill = vel_mag)) +
+st_make_grid
+shelf(data.table)
+data(geopotential)
+test <- data.table::copy(geopotential)[date == date[1]]
+test[, gh.z := Anomaly(gh), by = .(lat)]
+test[, c("u", "v") := GeostrophicWind(gh.z, lon, lat)]
+
+ggplot(test, aes(lon, lat)) +
+    geom_contour2(aes(z = gh.z), xwrap = c(0, 360)) +
+    geom_streamline(aes(dx = dlon(u, lat), dy = dlat(v)), L = 60,
+                    xwrap = c(0, 360))
+
+test %>%
+  mutate(
+    .keep = "used",
+    d2 = dlon(u, lat)
+  ) %>%
+    arrange(d2)
+```
+
+
+```{r}
+hycom_sf <- 
+  hy2$tibble %>% 
+  st_as_sf(coords = c("lon", "lat")) %>%
+  st_set_crs(4326) %T>% 
+  print()
+
+hycom_sf %>%
+  sf::st_bbox()
+
+
+hycom_grid <- 
+  hycom_sf %>% 
+  st_make_grid(n = c(100, 100)) %>%
+  st_sf() %T>% 
+  print()
+
+ggplot() +
+  geom_sf(data = hycom_grid) +
+  # geom_sf(data = wio, fill = "lightgrey", col = "black") +
+  # coord_sf(ylim = c(-12.5, -4.5), xlim = c(36, 48)) +
+  theme_bw() +
+  theme(axis.text = element_text(size = 12, colour = 1))
+
+hycom_grided <- 
+  hycom_grid %>% 
+  mutate(id = 1:n(), 
+         contained = lapply(st_contains(st_sf(geometry),hycom_sf),identity),
+         obs = sapply(contained, length),
+         u = sapply(contained, function(x) {median(hycom_sf[x,]$hycom_u, na.rm = TRUE)}),
+         v = sapply(contained, function(x) {median(hycom_sf[x,]$hycom_v, na.rm = TRUE)})
+         ) %T>% 
+  print()
+
+hycom_grided2 <- 
+  hycom_grided %>% 
+  select(obs, u, v) %>% 
+  na.omit() %T>% 
+  print()
+
+
+## obtain the centroid coordinates from the grid as table
+coordinates <- 
+  hycom_grided2 %>% 
+  st_centroid() %>% 
+  st_coordinates() %>% 
+  as_tibble() %>% 
+  rename(x = X, y = Y) %T>% 
+  print()
+
+## remove the geometry from the simple feature of gridded drifter dataset
+st_geometry(hycom_grided2) <- NULL
+
+## stitch together the extracted coordinates and drifter information int a single table for SE monsoon season
+current_gridded <- 
+  coordinates %>% 
+  bind_cols(hycom_grided2) %T>% 
+  print()
+```
+
+
+```{r}
+shelf(oce)
+
+## interpolate the U component
+u_se <-  interpBarnes(x = current_gridded$x, y = current_gridded$y, z = current_gridded$u)
+v_se <-  interpBarnes(x = current_gridded$x, y = current_gridded$y, z = current_gridded$v)
+
+## obtain dimension that determine the width (ncol) and length (nrow) for tranforming wide into long format table
+dimension_u <- data.frame(lon = u_se$xg, u_se$zg) %>% dim()
+dimension_v <- data.frame(lon = v_se$xg, v_se$zg) %>% dim()
+
+## make a U component data table from interpolated matrix
+u_tb <-
+  data.frame(
+    lon = u_se$xg,
+    u_se$zg
+  ) %>%
+  gather(key = "lata", value = "u", 2:dimension_u[2]) %>%
+  mutate(lat = rep(u_se$yg, each = dimension_u[1])) %>%
+  select(lon, lat, u) %>%
+  as_tibble() %T>% 
+  print()
+
+## make a V component data table from interpolated matrix
+v_tb <-
+  data.frame(
+    lon = v_se$xg,
+    v_se$zg
+  ) %>%
+  gather(key = "lata", value = "v", 2:dimension_v[2]) %>%
+  mutate(lat = rep(v_se$yg, each = dimension_v[1])) %>%
+  select(lon, lat, v) %>%
+  as_tibble() %T>% 
+  print()
+
+
+uv.se <- 
+  u_tb %>% 
+  bind_cols(v_tb %>% select(v)) %>% 
+  mutate(vel = sqrt(u^2+v^2)) %T>% 
+  print()
+```
+
+
+```{r}
+ggplot() +
+  geom_raster(data = uv.se, aes(x = lon, y = lat, fill = vel), interpolate = TRUE)+
+  geom_segment(data = uv.se, aes(x = lon, xend = lon + u/1.2, y = lat, yend = lat+v/1.2), 
+               arrow = arrow(angle = 20, length = unit(.2, "cm"), type = "open"))+
+  # geom_sf(data = wio,fill = "lightgrey", col = "black")+
+  # coord_sf(ylim = c(-12.5,-4.5), xlim = c(38, 48))+
+  scale_fill_gradientn(name = "Current",colours = oceColorsVelocity(120), 
+                       limits = c(0,1.6), breaks = seq(0.1,1.6,.3),
+                       guide = guide_colorbar(barwidth = .8, barheight = 15,
+                                              title = expression(Current~speed~(ms^{-1})), 
+                                              title.position = "right", title.hjust = .5, 
+                                              title.theme = element_text(angle = 90)))+
+  theme_bw() +
+  theme(legend.position = "right",
+        legend.key.height = unit(1.4, "cm"), 
+        legend.background = element_blank(),
+        axis.text = element_text(size = 12, colour = 1))+
+  labs(x = "", y = "")
+```
+
+
+```{r}
+ggplot() +
+  metR::geom_contour_fill(
+    data = uv.se, aes(x = lon, y = lat, z = vel),
+    na.fill = TRUE, bins = 70
+  ) +
+  metR::geom_streamline(
+    data = uv.se,
+    aes(x = lon, y = lat, dx = u, dy = v),
+    L      = 0.2, 
+    res    = 3, 
+    n      = 40, 
+    jitter = 4
+  ) +
+  # geom_sf(data = wio,fill = "lightgrey", col = "black")+
+  # coord_sf(ylim = c(-12.5,-4.5), xlim = c(38, 48))+
+  scale_fill_gradientn(
+    name    = "Current", 
+    colours = oceColorsVelocity(120),
+    limits  = c(0, 2), 
+    breaks  = seq(0.1, 2, .3),
+    guide   = guide_colorbar(
+      barwidth       = 0.8, 
+      barheight      = 15,
+      title          = expression(Current ~ speed ~ (ms^{-1})),
+      title.position = "right", 
+      title.hjust    = 0.5,
+      title.theme    = element_text(angle = 90)
+    ),
+    oob = scales::oob_squish
+  ) +
+  theme_bw() +
+  theme(
+    legend.position   = "right",
+    legend.key.height = unit(1.4, "cm"),
+    legend.background = element_blank(),
+    axis.text         = element_text(size = 12, colour = 1)
+  ) +
+  labs(x = "", y = "")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+ggplot() +
+  tidyterra::geom_spatraster(data = test_rast, aes(fill = vel_mag)) +
+  
+  # geom_raster(data = hy2$tibble, aes(x = lon, y = lat, fill = vel_mag), color = NA,
+  #           interpolate = TRUE) +
+  # velocity vectors
+  geom_streamline(
+    # data = slice(test_dat, seq(1, n(), by = 100)),
+    data = test_dat,
+    # skip = 10,
+    aes(
+      x     = lon,
+      dx  = hycom_u/length_divide,
+      # xend  = lon + hycom_u/length_divide,
+      y     = lat,
+      dy  = hycom_v/length_divide,
+      # yend  = lat + hycom_v/length_divide,
+      color = vel_mag
+      ),
+    # arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
+    # linewidth = 0.25,                              # adjust arrow thickness
+    na.rm     = TRUE,
+       L      = 0.2, 
+    res    = 3, 
+    n      = 40, 
+    jitter = 4
+  ) +
   # scale_fill_
-  theme_bw()
+  theme_bw() +
+  # facet_wrap(~date) +
+  scale_fill_gradientn(
+    name    = "Current", 
+    colours = oceColorsVelocity(120),
+    limits  = c(0, 2), 
+    breaks  = seq(0.1, 2, .3),
+    guide   = guide_colorbar(
+      barwidth       = 0.8, 
+      barheight      = 10,
+      title          = expression(Current ~ speed ~ (ms^{-1})),
+      title.position = "right", 
+      title.hjust    = 0.5,
+      title.theme    = element_text(angle = 90)
+    ),
+    # na.value = 'salmon',
+    oob = scales::oob_squish
+  ) +
+  # scale_fill_viridis_b(breaks = c(0.25, seq(0, 2, by = 0.5))) +
+  scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
+  # coord_cartesian(expand = FALSE, ylim = ylim, xlim = xlim) +
+  coord_sf(expand = FALSE, ylim = ylim, xlim = xlim) +
+  labs(x = NULL, y = NULL)
+
 ```
 
