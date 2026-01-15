@@ -372,6 +372,10 @@ if (!file_exists(hycom_info)) {
   unshelf(rvest)
   
 } else {
+  print(
+    glue("HYCOM search previously completed on ", 
+         "{file_info(hycom_info)$birth_time}")
+    )
   
   final_download_info <- read_csv(hycom_info, show_col_types = FALSE)
 }
@@ -392,6 +396,13 @@ if (exists("cloud_dir")) {
 }
 
 dir_create(dwnld_path)
+
+# long
+xmin = -83.8125
+xmax = -78.3125
+#lat
+ymin = 22.8125
+ymax = 26.4375
 
 # apply final search parameters
 path_save <- 
@@ -541,12 +552,10 @@ cruise_id <-
 #     filter(date == as_date("2018-07-26"))
 #     pull(file) %T>% 
 #     print()
-}
-
-
-
+# }
 
 ```
+
 
 ## Load Coast
 
@@ -757,8 +766,6 @@ camcorder::gg_playback(
   dpi = 600
   )
 ```
-
-
 
 
 ```{r terra-cam}
