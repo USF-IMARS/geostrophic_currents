@@ -812,7 +812,7 @@ for (i in cruise_id) {
   folder_name <- here("data", "plots", glue("camcorder_{i}"))
 
   if (dir_exists(folder_name)) {
-    print(glue("Cruise {i} already exists. Skipping!"))  
+    message(glue("Cruise {i} already exists. Skipping!\n\n----\n"))  
     next
   }
 
@@ -848,8 +848,7 @@ for (i in cruise_id) {
       terra::as.data.frame(xy = TRUE, date = hy_date) %>%
       # rename spatial
       rename("lon" = x, "lat" = y) %>%
-      relocate(date, .before = 1) %T>% 
-      print()
+      relocate(date, .before = 1) 
   
     # spatial extent for plotting
     xy_ext <- ext(hy_rast)
@@ -863,6 +862,7 @@ for (i in cruise_id) {
       
       geom_sf(data = coast) +
       
+      # TODO: add transect
       # transect lines
       # geom_sf(data = linestring, color = "red", alpha = 0.5) +
   
@@ -884,11 +884,11 @@ for (i in cruise_id) {
       labs(x = NULL, y = NULL, title = glue("{i}: {hy_date}")) +
       scale_fill_gradientn(
         name     = "Current",
-        colours  = oceColorsVelocity(120)[-c(48:72)], # edit colors
+        colours  = oceColorsVelocity(120)[-c(48:73)], # edit colors
         limits   = c(0, 2),
         breaks   = seq(0.250, 2, 0.25),
         rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
-        oob      = scales::oob_discard,
+        oob      = scales::oob_squish,
         guide    = guide_colorbar(
           barwidth       = 0.8,
           barheight      = 10,
@@ -926,7 +926,8 @@ for (i in cruise_id) {
     last_image_duration  = 10,
     last_as_first        = FALSE,
     dpi                  = 600,
-    stoprecording        = TRUE
+    stoprecording        = TRUE,
+    playback             = FALSE
     )
 
   # rename file
@@ -999,17 +1000,30 @@ if (FALSE) {
 ```
 
 ## Move gif to video folder in cloud
+
+Only needed sparingly
+
 ```{r terra-cam}
 # use when moved data to cloud and need to separate gif to video folder
 if (FALSE) {
+  # move gif in cloud from images to vid folder
+  here(cloud_dir, "hycom_vid_img", "vid") %>%
+    dir_create()
+  
   cloud_dir %>%
     dir_ls(regexp = "hycom") %>%
     dir_ls(regexp = "img$") %>%
     dir_ls(regexp = "gif", recurse = 1) %>%
     file_move(here(cloud_dir, "hycom_vid_img", "vid"))
 
-  here(cloud_dir, "hycom_vid_img", "vid") %>%
-    dir_create()
+  
+  # delete resize folder in cloud
+   # cloud_dir %>%
+   #  dir_ls(regexp = "hycom") %>%
+   #  dir_ls(regexp = "img$") %>%
+   #  dir_ls(regexp = "resize", recurse = 1) %>% 
+   #  dir_delete()
+  
 }
 ```
 
