@@ -973,6 +973,22 @@ for (i in cruise_id) {
 tictoc::toc()
 ```
 
+
+## Move gif to video folder in cloud
+```{r terra-cam}
+# use when moved data to cloud and need to separate gif to video folder
+if (FALSE) {
+  cloud_dir %>%
+    dir_ls(regexp = "hycom") %>%
+    dir_ls(regexp = "img$") %>%
+    dir_ls(regexp = "gif", recurse = 1) %>%
+    file_move(here(cloud_dir, "hycom_vid_img", "vid"))
+
+  here(cloud_dir, "hycom_vid_img", "vid") %>%
+    dir_create()
+}
+```
+
 # `ncdf4`: Load One HYCOM-TSIS File 
 
 ```{r netcdf4-one}
