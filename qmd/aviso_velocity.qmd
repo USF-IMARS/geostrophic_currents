@@ -576,22 +576,15 @@ slice_by      <- 5
 length_divide <- 2
 filt <- 
   . %>% 
-  # filter()
+  filter()
   # filter(date == first(date))
-  filter(between(as_date(date), as_date(first(date)), as_date(first(date)) + 4))
+  # filter(between(as_date(date), as_date(first(date)), as_date(first(date)) + 4))
 
 aviso_tile <- aviso_grid_tibble %>% filt
 pts_lt     <- filter(vel_ext_transect, vel_mag < 0.5) %>% filt
 pts_gt     <- filter(vel_ext_transect, vel_mag >= 0.5) %>% filt
 vel_vect   <- slice(aviso_grid_tibble, seq(1, n(), by = slice_by)) %>% 
   filt
-```
-```{r}
-aviso_grid_tibble %>% 
-  mutate(.keep = "used",
-         dat = as_date(first(date)) + 2  )
-
-aviso_tile %>% distinct(date)
 ```
 
 
