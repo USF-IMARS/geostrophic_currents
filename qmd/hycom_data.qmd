@@ -398,11 +398,11 @@ if (exists("cloud_dir")) {
 dir_create(dwnld_path)
 
 # long
-xmin = -83.8125
-xmax = -78.3125
+xmin <- -83.8125
+xmax <- -78.3125
 #lat
-ymin = 22.8125
-ymax = 26.4375
+ymin <- 22.8125
+ymax <- 26.4375
 
 # apply final search parameters
 path_save <- 
@@ -647,6 +647,7 @@ mapview::mapview(linestring)
 ## Load Multiple HYCOM-TSIS Data
 
 ```{r terra}
+if (FALSE) {
 # hycom_paths <- 
 #   hycom_path[1] %>%
 #   dir_ls() %T>% 
@@ -765,6 +766,7 @@ camcorder::gg_playback(
   last_as_first        = FALSE,
   dpi = 600
   )
+}
 ```
 
 
@@ -789,18 +791,10 @@ for (i in cruise_id) {
   # filter CTD dates
   filt_dates <- 
     min_max_date %>% 
-    filter(
-      cruise_id == i,
-      # year == 2018,
-      # cruise_id == "WS18285",
-    ) %>% 
+    filter(cruise_id == i) %>% 
     pull(max_time) %>% 
     # add all dates from max date minus x days
-    map(
-      \(.x) {
-        as_date((.x-days(prev_day)):.x)
-      }
-    ) %>% 
+    map(\(.x) as_date((.x-days(prev_day)):.x)) %>% 
     list_c() %T>% 
     print()
 
@@ -824,13 +818,10 @@ for (i in cruise_id) {
 
 
   camcorder::gg_record(folder_name, dpi = 600)
-  # for (paths in hycom_paths) {
+
   for (paths in pull(hycom_filt, file)) {
-    
-    # shelf(camcorder)
-    
+
     # read netcdf
-    # hy_rast <- rast(hycom_paths[1])
     hy_rast <- rast(paths)
   
     # extract date in the format as days since Dec 31, 1990
@@ -893,11 +884,11 @@ for (i in cruise_id) {
       labs(x = NULL, y = NULL, title = glue("{i}: {hy_date}")) +
       scale_fill_gradientn(
         name     = "Current",
-        colours  = oceColorsVelocity(120), # edit colors
+        colours  = oceColorsVelocity(120)[-c(48:72)], # edit colors
         limits   = c(0, 2),
-        breaks   = seq(0.0, 2, 0.25),
+        breaks   = seq(0.250, 2, 0.25),
         rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
-        oob      = scales::oob_squish,
+        oob      = scales::oob_discard,
         guide    = guide_colorbar(
           barwidth       = 0.8,
           barheight      = 10,
@@ -909,7 +900,7 @@ for (i in cruise_id) {
       ) +
       scale_color_gradientn(
         name     = "Current",
-        colours  = oce.colorsPalette(120), # edit colors
+        colours  = oce.colorsPalette(120)[-c(48:72)], # edit colors
         limits   = c(0, 2),
         breaks   = seq(0.0, 2, 0.25),
         rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
@@ -929,20 +920,16 @@ for (i in cruise_id) {
     print(plt)
   }
   
-  # folder_name <- glue("camcorder_{i}")
-  
-  # shelf(camcorder)
-  # camcorder::gg_record(here("data", "plots", folder_name), dpi = 600)
-  # camcorder::gg_stop_recording()
   camcorder::gg_playback(
     frame_duration       = 0.7, 
     first_image_duration = 10,
     last_image_duration  = 10,
     last_as_first        = FALSE,
-    dpi = 600,
-    stoprecording = TRUE
+    dpi                  = 600,
+    stoprecording        = TRUE
     )
 
+  # rename file
   folder_name %>% 
     dir_ls(regexp = "png") %>% 
     bind_cols(
@@ -951,10 +938,6 @@ for (i in cruise_id) {
     ) %>%
     mutate(
       file_name = here(dirname(old_file), glue("{file_name}.png")),
-      
-      
-      # new_file = dirname(old_file),
-      # new_file = glue("{new_file}")
     ) %$%
     map2(
       old_file,
@@ -964,6 +947,7 @@ for (i in cruise_id) {
       }
     )
   
+  # rename gif
   folder_name %>% 
     dir_ls(regexp = "gif") %>% 
     file_move(here(dirname(.), glue("{i}_currents.gif")))
@@ -973,6 +957,46 @@ for (i in cruise_id) {
 tictoc::toc()
 ```
 
+
+## Move resized Images and Gifs
+
+```{r gif-move}
+if (FALSE) {
+  # move "resized" folders
+  resized <- here("data", "plots", "resized")
+  dir_create(resized)
+  here("data", "plots") %>% 
+    dir_ls(regexp = "camcorder_") %>% 
+    dir_ls(regexp = "resize", recurse = 1, type = "directory") %>%
+    tibble(old_path = .) %>% 
+    mutate(
+      new_path = str_extract(old_path, "[A-Z]{2,3}\\d{3,6}"),
+      new_path = here(resized, glue("{new_path}_resize"))
+      ) %T>%
+    print() %$%
+    
+    map2(
+      old_path,
+      new_path,
+      \(.x, .y) {
+        # as.character(.x)
+        if (!dir_exists(.y)) {
+          dir_copy(.x, .y)
+        }
+        dir_delete(.x)
+      }
+    )
+  
+  # move gif
+  gif_folder <- here("data", "plots", "vid")
+  dir_create(gif_folder)
+  here("data", "plots") %>% 
+    dir_ls(regexp = "camcorder_") %>% 
+    dir_ls(regexp = "gif", recurse = 1) %T>%
+    print() %>% 
+    file_move(gif_folder)
+}
+```
 
 ## Move gif to video folder in cloud
 ```{r terra-cam}
