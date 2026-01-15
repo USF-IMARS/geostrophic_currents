@@ -576,14 +576,22 @@ slice_by      <- 5
 length_divide <- 2
 filt <- 
   . %>% 
-  filter()
+  # filter()
   # filter(date == first(date))
+  filter(between(as_date(date), as_date(first(date)), as_date(first(date)) + 4))
 
 aviso_tile <- aviso_grid_tibble %>% filt
 pts_lt     <- filter(vel_ext_transect, vel_mag < 0.5) %>% filt
 pts_gt     <- filter(vel_ext_transect, vel_mag >= 0.5) %>% filt
 vel_vect   <- slice(aviso_grid_tibble, seq(1, n(), by = slice_by)) %>% 
   filt
+```
+```{r}
+aviso_grid_tibble %>% 
+  mutate(.keep = "used",
+         dat = as_date(first(date)) + 2  )
+
+aviso_tile %>% distinct(date)
 ```
 
 
@@ -598,22 +606,39 @@ plt_mag_vel_vect <-
   geom_sf(data = coast) +
   
   # velocity vectors
-  geom_segment(
-    data = vel_vect,
+  metR::geom_arrow(
+    data = aviso_tile,
+    skip = 1,
     aes(
-      x     = lon, 
-      xend  = lon + ugos/length_divide, 
-      y     = lat, 
-      yend  = lat + vgos/length_divide, 
+      x     = lon,
+      dx    = ugos,
+      y     = lat,
+      dy    = vgos,
       color = vel_mag
-      ),
-    arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
-    linewidth = 0.25,                              # adjust arrow thickness
-    na.rm     = TRUE
+    ),
+    # arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
+    size = 0.25,                              # adjust arrow thickness
+    na.rm = TRUE,
+    # arrow.length = 1
   ) +
+  
+  # # velocity vectors
+  # geom_segment(
+  #   data = vel_vect,
+  #   aes(
+  #     x     = lon, 
+  #     xend  = lon + ugos/length_divide, 
+  #     y     = lat, 
+  #     yend  = lat + vgos/length_divide, 
+  #     color = vel_mag
+  #     ),
+  #   arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
+  #   linewidth = 0.25,                              # adjust arrow thickness
+  #   na.rm     = TRUE
+  # ) +
 
   # transects
-  geom_sf(data = linestring, color = "red")  +
+  # geom_sf(data = linestring, color = "red")  +
 
   # less than 0.5 m/s
   # geom_point(data = pts_lt,
@@ -629,21 +654,59 @@ plt_mag_vel_vect <-
   
   # styling
   labs(x = NULL, y = NULL,
-       color = expression("Velocity"~(m~s^-1)),
-       fill = expression("Velocity"~(m~s^-1))) +
+       # color = expression("Current Speed"~(m~s^-1)),
+       # fill  = expression("Current Speed"~(m~s^-1))
+       ) +
   coord_sf(expand = FALSE, ylim = ylim, xlim = xlim) +
-  scale_fill_viridis_b() +
-  scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
-  # facet_wrap(~date)
+  
+  # fill
+  # scale_fill_viridis_b() +
+  scale_fill_gradientn(
+    name     = "Current",
+    colours  = oce::oceColorsVelocity(120)[-c(48:73)], # edit colors
+    limits   = c(0, 2),
+    breaks   = seq(0.250, 2, 0.25),
+    rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
+    oob      = scales::oob_squish,
+    guide    = guide_colorbar(
+      barwidth       = 0.8,
+      barheight      = 10,
+      title          = expression(Current ~ speed ~ (m ~ s^{-1})),
+      title.position = "right",
+      title.hjust    = 0.5,
+      title.theme    = element_text(angle = 90)
+    )
+  ) +
+  # color
+  # scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
+  scale_color_gradientn(
+    name     = "Current",
+    colours  = oce::oce.colorsPalette(120)[-c(48:72)], # edit colors
+    limits   = c(0, 2),
+    breaks   = seq(0.0, 2, 0.25),
+    rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
+    oob      = scales::oob_squish,
+    guide    = guide_colorbar(
+      barwidth       = 0.8,
+      barheight      = 10,
+      # title          = expression(Velocity ~ magnitude ~ (m ~ s^{-1})),
+      title          =  expression(Current ~ speed ~ (m ~ s^{-1})),
+      title.position = "right",
+      title.hjust    = 0.5,
+      title.theme    = element_text(angle = 90)
+    )
+  ) +
+  
   theme_bw() +
   theme(
     legend.key.size = unit(0.25, "cm"),
     text = element_text(size = 4),
-    legend.position = "bottom",
+    # legend.position = "bottom",
     legend.margin = margin(t = -10),
     axis.text = element_blank(),
     axis.ticks = element_blank()
     ) +
+  # facet_wrap(~date)
   
   gganimate::transition_states(date, transition_length = 0) +
   labs(title = "Date: {closest_state}")
@@ -665,7 +728,12 @@ anim_save(
 
 ```
 
+```{r}
+here("data", "plots", "aviso_test2") %>%  
+camcorder::gg_record(dpi = 600)
+camcorder::gg_stop_recording()
 
+```
 
 
 
