@@ -128,8 +128,10 @@ path_copernicusmarine <- here("copernicusmarine.exe")
 ```{r download-aviso-setup}
 # set date range by month
 months <-
-  seq(as_date("2015-01-01"),
-      as_date("2024-12-31"),
+  # seq(as_date("2015-01-01"),
+      # as_date("2024-12-31"),
+  seq(as_date("2024-10-01"),
+      as_date("2025-12-31"),
       by = "1 month")
 # months <-
 #   seq(as_date("2015-01-01"),
@@ -190,7 +192,7 @@ aviso_download(
 path_box <- here("C:/Users/sebastian15/Box/aviso_velocity/data/raw/copernicus", 
                  add_loop)
 
-dir_ls(path_save1) %>% 
+dir_ls(path_save) %>% 
 file_copy(path_box)
 ```
 
