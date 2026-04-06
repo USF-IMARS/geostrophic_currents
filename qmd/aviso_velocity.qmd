@@ -26,6 +26,8 @@ To save videos per year:
 - need to have downloaded `ffmpeg` to animate vectors
   - <https://www.gyan.dev/ffmpeg/builds/>
   - then find the path to the *bin/ffmpeg.exe* in order to run the animation
+  - other option is to save as gif using `camcorder`, then convert to mp4 using `ffmpeg` from shell
+    - ffmpeg -i example.gif -movflags faststart -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" test.mp4
 
 
 # ---- AVISO+ Sea Surface Height and Velocity ----
@@ -125,6 +127,9 @@ dir_create(animate_save)
 
 source(here("R", "aviso_functions.R"))
 ```
+```{r}
+sf::sf_use_s2(FALSE)
+```
 
 ### Set `ffmpeg.exe` Location 
 
@@ -172,9 +177,10 @@ aviso_path <- eval(aviso_path)
 
 aviso_path_full <-
   aviso_path %>% 
+  dir_ls(regexp = "loop") %>%
   dir_ls(regexp = "mems_obs-sl_glo")
 
-aviso_path_full <- dir_ls(here("data", "raw", "copernicus", "loop_current")) 
+# aviso_path_full <- dir_ls(here("data", "raw", "copernicus", "loop_current")) 
 
 # set year(s) to load data
 # if multiple separate with `|`
@@ -200,7 +206,7 @@ Velocity (m/s) is calculated by: $ mag = \sqrt{ugos^2 + vgos^2} $
 
 ```{r load-multi}
 # number of days to skip to reduce data size
-skip_dates <- 1
+skip_dates <- 10
 
 # load aviso data
 aviso_days <- aviso_load(aviso_path, .by = skip_dates)
@@ -487,28 +493,36 @@ TODO: try this method to show distance from shore
 <https://stackoverflow.com/questions/71473958/how-to-keep-points-in-gganimate-after-each-frame-is-rendered>
 
 ```{r plot-per-transect}
-dist_avg_month <- 
+dist_avg_month <-
   dist_from_shore2 %>%
   mutate(
-         ) %>%
     months = format(date2, "%B %Y"),
     months = my(months),
+  ) %>%
   summarise(
     .by = c(months, l1, line_name, dist),
-    vel_mag = mean(vel_mag, na.rm = TRUE)
-  ) 
+    vel_mag_sd = sd(vel_mag, na.rm = TRUE),
+    vel_mag = mean(vel_mag, na.rm = TRUE),
+  ) %>%
+  mutate(
+    vel_min = vel_mag - vel_mag_sd,
+    vel_max = vel_mag + vel_mag_sd,
+  )
 
 dist_from_shore2 %>%
   mutate(
     months = format(date2, "%B %Y"),
     months = my(months)
     ) %>% 
+  # filter(str_detect(line_name, "LK")) %>%
   ggplot(aes(x = dist, y = vel_mag, color = date)) +
-  geom_hline(yintercept = 0.5, color = "red") +
-  geom_path(show.legend = FALSE) +
-  geom_point(show.legend = FALSE) +
+  geom_ribbon(data = dist_avg_month, aes(ymin = vel_min, ymax = vel_max), 
+              color = "grey50", fill = "grey50", alpha = 0.5) +
   geom_path(data = dist_avg_month,  color = "black", show.legend = FALSE) +
   geom_point(data = dist_avg_month, color = "black",  show.legend = FALSE) +
+  geom_hline(yintercept = 0.5, color = "red") +
+  # geom_path(alpha = 0.5, show.legend = FALSE) +
+  geom_point(alpha = 0.5, show.legend = FALSE) +
   labs(
     x = "Distance from Shore (km)", 
     y = expression("Velocity"~(m~s^-1)),
@@ -517,54 +531,79 @@ dist_from_shore2 %>%
   coord_cartesian(expand = FALSE) +
   theme_bw() +
   facet_grid(months ~ line_name)
+  # facet_wrap(months ~ line_name, ncol = 4)
 ```
 
 
 ```{r trasect-view}
 if (FALSE) {
-  
-trasect_plt <- 
-  dist_from_shore2 %>%
-  filter(between(date2, first(date2), first(date2) + days(1))) %>%
-  ggplot(aes(x = dist, y = vel_mag, color = as.factor(line_name))) +
-  geom_hline(yintercept = 0.5, color = "red") +
-  geom_path() +
-  geom_point(size = 1) +
-  labs(
-    x = "Distance from Shore (km)", 
-    y = expression("Velocity"~(m~s^-1)),
-    color = "ID"
-    ) +
-  coord_cartesian(expand = FALSE) +
-  theme_bw() +
-  facet_wrap(~line_name) +
-  theme(
-    text            = element_text(size = 2),
-    legend.key.size = unit(0.25, "cm"),
-    legend.key.spacing = unit(0.05, "cm"),
-    legend.position = "bottom",
-    legend.margin   = margin(t = -10),
-    axis.text       = element_blank(),
-    axis.ticks      = element_blank()
-    ) +
-  guides(colour = "none") +
-  gganimate::transition_time(date2) +
-  labs(title = "Date: {frame_time}")
-
-if (FALSE) {
-  anim_save(
-    file      = glue("trasect_plot4_{date_suffix}.mp4"),
-    animation = trasect_plt,
-    path      = animate_save,
-    renderer  = ffmpeg_renderer(format = "mp4", ffmpeg = ffmpeg_path),
     
-    height  = 800,
-    width   = 800,
-    res     = 300
-    # nframes = nlyr(multi_rast),
-    # fps     = 20
-  )
-}
+  trasect_plt <- 
+    dist_from_shore2 %>%
+    # filter(between(date2, first(date2), first(date2) + days(1))) %>%
+    # ggplot(aes(x = dist, y = vel_mag, color = as.factor(line_name))) +
+    ggplot(aes(x = dist, y = vel_mag, color = as.factor(line_name), group = date2)) +
+    geom_hline(yintercept = 0.5, color = "red") +
+    geom_path() +
+    geom_point(size = 1) +
+    labs(
+      x = "Distance from Shore (km)", 
+      # y = expression("Velocity"~(m~s^-1)),
+      color = "ID"
+      ) +
+    scale_y_continuous(
+      guide    = guide_axis(
+        title = expression(Velocity ~ (m ~ s^{-1}))
+        ) 
+    ) +
+    coord_cartesian(expand = FALSE) +
+    theme_bw() +
+    facet_wrap(~line_name) +
+    theme(
+      text            = element_text(size = 2),
+      legend.key.size = unit(0.25, "cm"),
+      legend.key.spacing = unit(0.05, "cm"),
+      legend.position = "bottom",
+      legend.margin   = margin(t = -10),
+      axis.text       = element_blank(),
+      axis.ticks      = element_blank()
+      ) +
+    guides(colour = "none") +
+    gganimate::transition_time(date2) +
+    labs(title = "Date: {frame_time}")
+
+  # ---- save plot ---- #
+  save_gg(
+    plt            = trasect_plt, # edit if want specific plot
+    save_location  = animate_save,
+    save_name      = "test_transect",
+    verbose        = TRUE,
+    # overwrite      = FALSE,
+    overwrite      = TRUE,
+    time_stamp_fmt = "%Y%m%d_%H%M%S",
+    device         = "jpeg",
+    height         = 800,
+    width          = 800,
+    dpi            = 600,
+    units          = "mm",
+    bg             = "white"
+    )
+  
+  if (FALSE) {
+    anim_save(
+      file      = glue("trasect_plot4_{date_suffix}.mp4"),
+      animation = trasect_plt,
+      path      = animate_save,
+      renderer  = ffmpeg_renderer(format = "mp4", ffmpeg = ffmpeg_path),
+      
+      height  = 800,
+      width   = 800,
+      res     = 300,
+      # units   = "mm",
+      # nframes = nlyr(multi_rast),
+      # fps     = 20
+    )
+  }
 }
 ```
 
@@ -575,11 +614,11 @@ for every `slice_by`, should include a polygon to keep?
 
 ```{r vars-plt-mag-vel-vectors}
 slice_by      <- 5
-length_divide <- 2
+length_divide <- 2 # not used in current plotting, used in WIP
 filt <- 
   . %>% 
-  # filter()
-  filter(date == first(date))
+  filter()
+  # filter(date == first(date))
   # filter(between(as_date(date), as_date(first(date)), as_date(first(date)) + 4))
 
 aviso_tile <- aviso_grid_tibble %>% filt
@@ -587,6 +626,14 @@ pts_lt     <- filter(vel_ext_transect, vel_mag < 0.5) %>% filt
 pts_gt     <- filter(vel_ext_transect, vel_mag >= 0.5) %>% filt
 vel_vect   <- slice(aviso_grid_tibble, seq(1, n(), by = slice_by)) %>% 
   filt
+pts_lt <- 
+  vel_ext_transect  %>%
+  filt %>%
+  filter(vel_mag < 0.5) 
+pts_gt <- 
+  vel_ext_transect  %>%
+  filt %>%
+  filter(vel_mag >= 0.5)
 ```
 
 
@@ -632,10 +679,10 @@ vel_vect   <- slice(aviso_grid_tibble, seq(1, n(), by = slice_by)) %>%
   #   na.rm     = TRUE
   # ) +
 
-  # transects
+  # # transects
   # geom_sf(data = linestring, color = "red")  +
-
-  # less than 0.5 m/s
+  # 
+  # # less than 0.5 m/s
   # geom_point(data = pts_lt,
   #            aes(x = x,  y = y),
   #            color = "blue",
@@ -648,14 +695,11 @@ vel_vect   <- slice(aviso_grid_tibble, seq(1, n(), by = slice_by)) %>%
   #            size  = 0.5) +
   
   # styling
-  labs(x = NULL, y = NULL,
-       # color = expression("Current Speed"~(m~s^-1)),
-       # fill  = expression("Current Speed"~(m~s^-1))
-       ) +
+  labs(x = NULL, y = NULL) +
+  
   coord_sf(expand = FALSE, ylim = ylim, xlim = xlim) +
   
   # fill
-  # scale_fill_viridis_b() +
   scale_fill_gradientn(
     name     = "Current",
     colours  = oce::oceColorsVelocity(120)[-c(48:73)], # edit colors
@@ -673,7 +717,6 @@ vel_vect   <- slice(aviso_grid_tibble, seq(1, n(), by = slice_by)) %>%
     )
   ) +
   # color
-  # scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
   scale_color_gradientn(
     name     = "Current",
     colours  = oce::oce.colorsPalette(120)[-c(48:72)], # edit colors
@@ -684,7 +727,6 @@ vel_vect   <- slice(aviso_grid_tibble, seq(1, n(), by = slice_by)) %>%
     guide    = guide_colorbar(
       barwidth       = 0.8,
       barheight      = 10,
-      # title          = expression(Velocity ~ magnitude ~ (m ~ s^{-1})),
       title          =  expression(Current ~ speed ~ (m ~ s^{-1})),
       title.position = "right",
       title.hjust    = 0.5,
@@ -694,13 +736,12 @@ vel_vect   <- slice(aviso_grid_tibble, seq(1, n(), by = slice_by)) %>%
   
   theme_bw() +
   theme(
+    text            = element_text(size = 4),
+    legend.margin   = margin(t = -10),
+    axis.text       = element_blank(),
+    axis.ticks      = element_blank(),
     legend.key.size = unit(0.25, "cm"),
-    text = element_text(size = 4),
-    # legend.position = "bottom",
-    legend.margin = margin(t = -10),
-    axis.text = element_blank(),
-    axis.ticks = element_blank()
-    ) #+
+    ) +
   # facet_wrap(~date)
   
   gganimate::transition_states(date, transition_length = 0) +
@@ -734,15 +775,20 @@ camcorder::gg_stop_recording()
 
 # WIP: Crop along the FL Keys and add more vectors
 
-
+use `st_intersection(fl_keys_poly)` to crop to Florida Keys Polygon
 
 
 # ---- Create Polygon ----
 
 ```{r edit-transects}
-transect_file <- here(shp_save, "fl_keys_polygon.shp")
+fl_poly_file <- here(shp_save, "fl_keys_polygon.shp")
+# fl_poly_file <- rstudioapi::selectFile()
 
-# stations_path <- rstudioapi::selectFile() 
+if (exists("cloud_dir")) {
+  fl_poly_file <- here(cloud_dir, "data", "raw", "fl_keys_polygon.shp")
+}
+
+# stations_path <- rstudioapi::selectFile()
 stations_path <- 
   here("data", "raw") %>%
   dir_ls(regexp = "fknms")
@@ -756,9 +802,10 @@ station       <-
   filter(str_detect(geo_loc_name, "(?i)florida keys") & !str_detect(line_id, "PL")) %>%
   select(station_id, station_class, "lon" = mean_lon, "lat" = mean_lat, line_id)
 
-if (file_exists(transect_file)) {
+if (file_exists(fl_poly_file)) {
   message("Reading transects shapefile")
-  linestring <- st_read(transect_file)
+  # linestring <- st_read(fl_poly_file)
+  fl_keys_poly <- st_read(fl_poly_file)
 } else {
   
   message("Creating transects.")
@@ -775,23 +822,24 @@ if (file_exists(transect_file)) {
 
   names(fl_keys_poly) <- c("id", "type", "geometry")
 
-  message(paste0("Saving transects as `", basename(transect_file), "`."))
+  message(paste0("Saving Florida Polygon as `", basename(fl_poly_file), "`."))
   
   st_write(
     fl_keys_poly,
-    transect_file
+    fl_poly_file
   )
 }
+
+plot(fl_keys_poly)
 ```
 
 ```{r}
-plot(fl_keys_poly)
 test2 <-
   aviso_grid_tibble %>%
   filter(date == first(date)) %>%
   st_as_sf(coords = c("lon", "lat"), remove = FALSE) %>%
   st_set_crs(st_crs(4326)) %>%
-  st_crop(fl_keys_poly) %>%
+  st_intersection(fl_keys_poly) %>%
   as_tibble()
 
 test <-
@@ -801,75 +849,121 @@ test <-
   tidyterra::as_tibble(xy = TRUE) %>%
   rename("lon" = x, "lat" = y, "adt" = 3, "vgos" = 4, "ugos" = 5, "vel_mag" = 6)
 
-test2 <-
-  multi_rast %>%
-  terra::subset(1:4) %>%
-  mask(fl_keys_poly, inverse = TRUE) %>%
-  tidyterra::as_tibble(xy = TRUE) %>%
-  rename("lon" = x, "lat" = y, "adt" = 3, "vgos" = 4, "ugos" = 5, "vel_mag" = 6) %>%
-  slice(seq(1, n(), by = slice_by))
+# test2 <-
+#   multi_rast %>%
+#   terra::subset(1:4) %>%
+#   mask(fl_keys_poly, inverse = TRUE) %>%
+#   tidyterra::as_tibble(xy = TRUE) %>%
+#   rename("lon" = x, "lat" = y, "adt" = 3, "vgos" = 4, "ugos" = 5, "vel_mag" = 6) %>%
+#   slice(seq(1, n(), by = slice_by))
 
- ggplot() +
+ggplot() +
   
   # velocity pixels
   # geom_sf(data = test2)
   geom_tile(data = test2, aes(x = lon, y = lat, fill = vel_mag),
             na.rm = TRUE) +
-  geom_tile(data = test, aes(x = lon, y = lat, fill = vel_mag),
-            na.rm = TRUE) +
+  # geom_tile(data = test, aes(x = lon, y = lat, fill = vel_mag),
+  #           na.rm = TRUE) +
 
   # coast
   geom_sf(data = coast) +
   geom_sf(data = fl_keys_poly, fill = NA) +
+
   # velocity vectors
-  geom_segment(
-    data = test,
-    aes(
-      x     = lon, 
-      xend  = lon + ugos/length_divide, 
-      y     = lat, 
-      yend  = lat + vgos/length_divide, 
-      color = vel_mag
-      ),
-    arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
-    linewidth = 0.25,                              # adjust arrow thickness
-    na.rm     = TRUE
-  ) +
-  geom_segment(
+  metR::geom_arrow(
     data = test2,
+    skip = 0,
     aes(
-      x     = lon, 
-      xend  = lon + ugos/length_divide, 
-      y     = lat, 
-      yend  = lat + vgos/length_divide, 
+      x     = lon,
+      dx    = ugos,
+      y     = lat,
+      dy    = vgos,
       color = vel_mag
-      ),
-    arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
-    linewidth = 0.25,                              # adjust arrow thickness
-    na.rm     = TRUE
+    ),
+    # arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
+    size = 0.25,                              # adjust arrow thickness
+    na.rm = TRUE,
+    # arrow.length = 1
   ) +
 
-  # transects
-  geom_sf(data = linestring, color = "red")  +
-
-  # less than 0.5 m/s
-  geom_point(data = filter(pts_lt, date == first(date)),
-             aes(x = x,  y = y),
-             color = "blue",
-             size  = 0.5) +
-
-  # greater than 0.5 m/s
-  geom_point(data = filter(pts_gt, date == first(date)),
-             aes(x = x,  y = y),
-             color = "green",
-             size  = 0.5) +
-     # styling
+  #   metR::geom_arrow(
+  #   data = test,
+  #   skip = 0,
+  #   aes(
+  #     x     = lon,
+  #     dx    = ugos,
+  #     y     = lat,
+  #     dy    = vgos,
+  #     color = vel_mag
+  #   ),
+  #   # arrow     = arrow(length = unit(0.15/2, "cm")), # adjust arrow size
+  #   size = 0.25,                              # adjust arrow thickness
+  #   na.rm = TRUE,
+  #   # arrow.length = 1
+  # ) +
+  
+  
+  
+  # # transects
+  # geom_sf(data = linestring, color = "red")  +
+  # 
+  # # less than 0.5 m/s
+  # geom_point(data = filter(pts_lt, date == first(date)),
+  #            aes(x = x,  y = y),
+  #            color = "blue",
+  #            size  = 0.5) +
+  # 
+  # # greater than 0.5 m/s
+  # geom_point(data = filter(pts_gt, date == first(date)),
+  #            aes(x = x,  y = y),
+  #            color = "green",
+  #            size  = 0.5) +
+  
+  # styling
   labs(x = NULL, y = NULL,
        color = expression("Velocity"~(m~s^-1)),
        fill = expression("Velocity"~(m~s^-1))) +
-  coord_sf(expand = FALSE, ylim = ylim, xlim = xlim) +
-  scale_fill_viridis_b(na.value = NA) +
-  scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
+  coord_sf(expand = FALSE) +
+  # coord_sf(expand = FALSE, ylim = ylim, xlim = xlim) +
+  # scale_fill_viridis_b(na.value = NA) +
+  # scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
+  
+  # fill
+  scale_fill_gradientn(
+    name     = "Current",
+    colours  = oce::oceColorsVelocity(120)[-c(48:73)], # edit colors
+    limits   = c(0, 2),
+    breaks   = seq(0.250, 2, 0.25),
+    rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
+    oob      = scales::oob_squish,
+    guide    = guide_colorbar(
+      barwidth       = 0.8,
+      barheight      = 10,
+      title          = expression(Current ~ speed ~ (m ~ s^{-1})),
+      title.position = "right",
+      title.hjust    = 0.5,
+      title.theme    = element_text(angle = 90)
+    )
+  ) +
+  # color
+  scale_color_gradientn(
+    name     = "Current",
+    colours  = oce::oce.colorsPalette(120)[-c(48:72)], # edit colors
+    limits   = c(0, 2),
+    breaks   = seq(0.0, 2, 0.25),
+    rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
+    oob      = scales::oob_squish,
+    guide    = guide_colorbar(
+      barwidth       = 0.8,
+      barheight      = 10,
+      title          =  expression(Current ~ speed ~ (m ~ s^{-1})),
+      title.position = "right",
+      title.hjust    = 0.5,
+      title.theme    = element_text(angle = 90)
+    )
+  ) +
+  
   theme_bw()
   
   
@@ -939,6 +1033,7 @@ if (FALSE) {
   # )
 }
 
+
 ```
 
 
@@ -988,8 +1083,9 @@ vel_ext_transect %>%
   geom_sf(data = coast) +
   # geom_line(aes(x = lon, y = lat)) +
    # transects
+  geom_tile(aes(x = lon, y = lat, fill = vel_mag),
+            na.rm = TRUE) +
   geom_sf(data = linestring, color = "red")  +
-  
   
   # velocity vectors
   geom_segment(
@@ -1006,7 +1102,43 @@ vel_ext_transect %>%
     na.rm     = TRUE
   ) +
   labs(x = NULL, y = NULL) +
-  scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
+  # scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
+  
+      # fill
+  scale_fill_gradientn(
+    name     = "Current",
+    colours  = oce::oceColorsVelocity(120)[-c(48:73)], # edit colors
+    limits   = c(0, 2),
+    breaks   = seq(0.250, 2, 0.25),
+    rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
+    oob      = scales::oob_squish,
+    guide    = guide_colorbar(
+      barwidth       = 0.8,
+      barheight      = 10,
+      title          = expression(Current ~ speed ~ (m ~ s^{-1})),
+      title.position = "right",
+      title.hjust    = 0.5,
+      title.theme    = element_text(angle = 90)
+    )
+  ) +
+  # color
+  scale_color_gradientn(
+    name     = "Current",
+    colours  = oce::oce.colorsPalette(120)[-c(48:72)], # edit colors
+    limits   = c(0, 2),
+    breaks   = seq(0.0, 2, 0.25),
+    rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
+    oob      = scales::oob_squish,
+    guide    = guide_colorbar(
+      barwidth       = 0.8,
+      barheight      = 10,
+      title          =  expression(Current ~ speed ~ (m ~ s^{-1})),
+      title.position = "right",
+      title.hjust    = 0.5,
+      title.theme    = element_text(angle = 90)
+    )
+  ) +
+  
   coord_sf(ylim = c(24,26), xlim = c(-82, -80)) +
   theme_bw()
 ```
@@ -1033,8 +1165,41 @@ vel_ext_transect %>%
   ) +
   coord_cartesian(expand = FALSE) +
   facet_wrap(~date2) +
-  scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
-
+  # scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
+  # fill
+  scale_fill_gradientn(
+    name     = "Current",
+    colours  = oce::oceColorsVelocity(120)[-c(48:73)], # edit colors
+    limits   = c(0, 2),
+    breaks   = seq(0.250, 2, 0.25),
+    rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
+    oob      = scales::oob_squish,
+    guide    = guide_colorbar(
+      barwidth       = 0.8,
+      barheight      = 10,
+      title          = expression(Current ~ speed ~ (m ~ s^{-1})),
+      title.position = "right",
+      title.hjust    = 0.5,
+      title.theme    = element_text(angle = 90)
+    )
+  ) +
+  # color
+  scale_color_gradientn(
+    name     = "Current",
+    colours  = oce::oce.colorsPalette(120)[-c(48:72)], # edit colors
+    limits   = c(0, 2),
+    breaks   = seq(0.0, 2, 0.25),
+    rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
+    oob      = scales::oob_squish,
+    guide    = guide_colorbar(
+      barwidth       = 0.8,
+      barheight      = 10,
+      title          =  expression(Current ~ speed ~ (m ~ s^{-1})),
+      title.position = "right",
+      title.hjust    = 0.5,
+      title.theme    = element_text(angle = 90)
+    )
+  ) +
   # coord_sf(ylim = c(24,26), xlim = c(-82, -80)) +
   theme_bw()
 
@@ -1046,7 +1211,7 @@ date_filt <-
 
 vel_ext_transect %>%
   filter(date2 %in% date_filt$date2) %>%
-  filter(date2 %in% sample(date_filt$date2, 6)) %>%
+  # filter(date2 %in% sample(date_filt$date2, 6)) %>%
   arrange(date2) %>%
   # filter(between(date2, first(date2), first(date2) + 5)) %>%
   ggplot() +
@@ -1068,8 +1233,41 @@ vel_ext_transect %>%
   labs(x = NULL, y = expression("Velocity"~(m~s^-1)), color = "Magnitude") +
   coord_cartesian(expand = FALSE) +
   facet_wrap(~date2) +
-  scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
-
+  # scale_color_viridis_b(option = "magma", breaks = c(0.25, seq(0, 2, by = 0.5))) +
+    # fill
+  scale_fill_gradientn(
+    name     = "Current",
+    colours  = oce::oceColorsVelocity(120)[-c(48:73)], # edit colors
+    limits   = c(0, 2),
+    breaks   = seq(0.250, 2, 0.25),
+    rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
+    oob      = scales::oob_squish,
+    guide    = guide_colorbar(
+      barwidth       = 0.8,
+      barheight      = 10,
+      title          = expression(Current ~ speed ~ (m ~ s^{-1})),
+      title.position = "right",
+      title.hjust    = 0.5,
+      title.theme    = element_text(angle = 90)
+    )
+  ) +
+  # color
+  scale_color_gradientn(
+    name     = "Current",
+    colours  = oce::oce.colorsPalette(120)[-c(48:72)], # edit colors
+    limits   = c(0, 2),
+    breaks   = seq(0.0, 2, 0.25),
+    rescaler = ~ scales::rescale_mid(.x, mid = 0.5),
+    oob      = scales::oob_squish,
+    guide    = guide_colorbar(
+      barwidth       = 0.8,
+      barheight      = 10,
+      title          =  expression(Current ~ speed ~ (m ~ s^{-1})),
+      title.position = "right",
+      title.hjust    = 0.5,
+      title.theme    = element_text(angle = 90)
+    )
+  ) +
   # coord_sf(ylim = c(24,26), xlim = c(-82, -80)) +
   theme_bw()
 
