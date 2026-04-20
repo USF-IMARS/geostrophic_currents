@@ -124,7 +124,9 @@ source(here("R", "aviso_functions.R"))
 ```{r ctd-dates}
 # minimum year to extract from
 min_year <- 2015
+min_year <- 2024
 hours_of_day <- c(12, 23)
+hours_of_day <- c(12)
 
 # previous days to load from last CTD data
 prev_day <- 14
@@ -217,6 +219,7 @@ Depth options (40):
 ```{r constants}
 # ---- catalog url ---- #
 hycom_url <- "https://tds.hycom.org/thredds/catalog/datasets/GOMb0.01/reanalysis/data/"
+# hycom_url <- "https://tds.hycom.org/thredds/catalog/datasets/GOMe0.01/reanalysis/data/"
 
 # ---- constants ---- #
 vert    <- format(0, nsmall = 1) # depth
@@ -244,14 +247,14 @@ if (exists("cloud_dir")) {
     here(
       cloud_dir,
       "data",
-      "hycom_100deg_download_instructions.csv"
+      "hycom_100deg_download_instructions_2.csv"
       )
 } else {
   hycom_info <- 
     here(
     rstudioapi::selectDirectory(),
     "data",
-    "hycom_100deg_download_instructions.csv"
+    "hycom_100deg_download_instructions_2.csv"
   )
 }
 
@@ -288,7 +291,7 @@ if (!file_exists(hycom_info)) {
       file_day = map(
         file_yr,
         \(.file) {
-          paste0(.file, "catalog.html") %>%
+          x <- paste0(.file, "catalog.html") %>%
             read_html() %>%
             html_element("body") %>%
             html_table() %>%
