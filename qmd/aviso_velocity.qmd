@@ -778,7 +778,13 @@ camcorder::gg_stop_recording()
 use `st_intersection(fl_keys_poly)` to crop to Florida Keys Polygon
 
 
-# ---- Create Polygon ----
+# ---- Create Florida Keys Polygon ----
+
+Load or create a polygon for the Florida Keys only. This will remove everything 
+north and east of the keys, leaving just the waters closest to the keys  
+
+Stations are based on a classification from Enrique and Luke. Here, we are 
+selecting only the stations within the Florida Keys
 
 ```{r edit-transects}
 fl_poly_file <- here(shp_save, "fl_keys_polygon.shp")
@@ -788,6 +794,7 @@ if (exists("cloud_dir")) {
   fl_poly_file <- here(cloud_dir, "data", "raw", "fl_keys_polygon.shp")
 }
 
+# stations of the Florida Keys
 # stations_path <- rstudioapi::selectFile()
 stations_path <- 
   here("data", "raw") %>%
@@ -802,9 +809,10 @@ station       <-
   filter(str_detect(geo_loc_name, "(?i)florida keys") & !str_detect(line_id, "PL")) %>%
   select(station_id, station_class, "lon" = mean_lon, "lat" = mean_lat, line_id)
 
+
+# load or create Florida Keys polygon
 if (file_exists(fl_poly_file)) {
   message("Reading transects shapefile")
-  # linestring <- st_read(fl_poly_file)
   fl_keys_poly <- st_read(fl_poly_file)
 } else {
   
@@ -834,7 +842,8 @@ plot(fl_keys_poly)
 ```
 
 ```{r}
-test2 <-
+# crop the sf obj of vectors to the polygon
+keys_vel <-
   aviso_grid_tibble %>%
   filter(date == first(date)) %>%
   st_as_sf(coords = c("lon", "lat"), remove = FALSE) %>%
@@ -842,6 +851,7 @@ test2 <-
   st_intersection(fl_keys_poly) %>%
   as_tibble()
 
+# another method using raster masking, this leaves masked values as NA
 test <-
   multi_rast %>%
   terra::subset(1:4) %>%
@@ -860,8 +870,8 @@ test <-
 ggplot() +
   
   # velocity pixels
-  # geom_sf(data = test2)
-  geom_tile(data = test2, aes(x = lon, y = lat, fill = vel_mag),
+  # geom_sf(data = keys_vel)
+  geom_tile(data = keys_vel, aes(x = lon, y = lat, fill = vel_mag),
             na.rm = TRUE) +
   # geom_tile(data = test, aes(x = lon, y = lat, fill = vel_mag),
   #           na.rm = TRUE) +
@@ -871,8 +881,9 @@ ggplot() +
   geom_sf(data = fl_keys_poly, fill = NA) +
 
   # velocity vectors
+  # using sf and intersection method
   metR::geom_arrow(
-    data = test2,
+    data = keys_vel,
     skip = 0,
     aes(
       x     = lon,
@@ -887,6 +898,7 @@ ggplot() +
     # arrow.length = 1
   ) +
 
+  # using raster method
   #   metR::geom_arrow(
   #   data = test,
   #   skip = 0,
@@ -905,7 +917,7 @@ ggplot() +
   
   
   
-  # # transects
+  # # transects along keys 
   # geom_sf(data = linestring, color = "red")  +
   # 
   # # less than 0.5 m/s
@@ -975,6 +987,9 @@ ggplot() +
 
 # Create Transects along Shelf
 
+Load or create a transect along the keys at the outer most stations to see
+when these stations are in/out of the Florida Current
+
 ```{r edit-transects}
 transect_file <- here(shp_save, "transects_along.shp")
 
@@ -1038,6 +1053,8 @@ if (FALSE) {
 
 
 ```{r extract-along-transect}
+# from raster, each variable for each day is a layer, so need to divide by 
+# number of variables to get number of dates
 n_layers <- nlyr(multi_rast) / length(dat_grid)
 
 rast_names <- 
@@ -1049,18 +1066,19 @@ time(multi_rast)  <- rast_names
 names(multi_rast) <- paste(names(multi_rast), rast_names, sep = "_")
 
 
-vel_ext_transect <- 
- terra::extract(multi_rast, linestring, xy = TRUE) %>%
- select(ID, "lon" = x , "lat" = y, contains(c("vel_mag", "gos"))) %>%
+vel_ext_transect <-
+  # extract raster cells along the line
+  terra::extract(multi_rast, linestring, xy = TRUE) %>%
+  select(ID, "lon" = x , "lat" = y, contains(c("vel_mag", "gos"))) %>%
   pivot_longer(
     cols      = c(-ID, -lon, -lat),     # columns to pivot long,
     names_to  = "name",  # desired name for category column
     values_to = "vel_mag", # desired name for value column
     ) %>%
   mutate(
-    date = str_extract(name, "\\d.*"),
+    date  = str_extract(name, "\\d.*"),
     date2 = as_date(date),
-    name = str_remove(name, "_\\d{4}.*")
+    name  = str_remove(name, "_\\d{4}.*")
   ) %>%
   pivot_wider(
     data         = .,
