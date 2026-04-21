@@ -105,6 +105,41 @@ ctd_dat <-
     )
   )
 
+test <- 
+path_save %>%
+  dir_ls() %>%
+  tibble(file = .) %>%
+  # slice(1:2) %>%
+  mutate(
+    data = imap(
+      file,
+      \(.x, idx) {
+        print(basename(.x))
+        cruise <- # fix cruise WB22212
+          basename(.x) %>%
+          tools::file_path_sans_ext() %>%
+          str_replace("WS", "WB")
+
+        x <- 
+          read_csv(.x, show_col_types = FALSE, n_max = 1) %>%
+          select(cruise_id, time, station) %>%
+          mutate(
+            time = as_date(time),
+            station = as.character(station)
+          )
+      }
+        )
+  ) 
+
+test2 <- 
+test %>%
+  unnest(data) %>%
+  summarise(
+    .by = cruise_id,
+    time_min = min(time),
+    time_max = max(time),
+  ) %>%
+  arrange(time_min)
 ```
 
 # Save Extracted Dates
@@ -122,7 +157,7 @@ min_max_date <-
 save_loc <- rstudioapi::selectDirectory()
 if (!file_exists(save_loc)) {
   message("Saving file")
-  write_csv(min_max_date, file =  here(save_loc, "ctd_min_max_date.csv"))
+  write_csv(test2, file =  here(save_loc, "ctd_min_max_date.csv"))
 }
 
 ```
