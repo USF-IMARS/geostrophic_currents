@@ -218,8 +218,10 @@ Depth options (40):
 ## 3.1 Constants
 ```{r constants}
 # ---- catalog url ---- #
+# 2025-01-01 - 2024-09-01
 hycom_url <- "https://tds.hycom.org/thredds/catalog/datasets/GOMb0.01/reanalysis/data/"
-# hycom_url <- "https://tds.hycom.org/thredds/catalog/datasets/GOMe0.01/reanalysis/data/"
+# 2024-09-02 -
+hycom_url <- "https://tds.hycom.org/thredds/catalog/datasets/GOMe0.01/expt_02.8/data/archive/"
 
 # ---- constants ---- #
 vert    <- format(0, nsmall = 1) # depth
@@ -247,14 +249,14 @@ if (exists("cloud_dir")) {
     here(
       cloud_dir,
       "data",
-      "hycom_100deg_download_instructions_2.csv"
+      "hycom_100deg_download_instructions_3.csv"
       )
 } else {
   hycom_info <- 
     here(
     rstudioapi::selectDirectory(),
     "data",
-    "hycom_100deg_download_instructions_2.csv"
+    "hycom_100deg_download_instructions_3.csv"
   )
 }
 
@@ -422,14 +424,15 @@ path_save <-
   print() 
 ```
 
-### 3.3.2
+### 3.3.2 Download HYCOM Data One at a Time
 
 ```{r single-download}
 path_save %>% 
-  mutate(date2 = str_remove(date, "T.*") %>% ymd()) %$%
+  mutate(date2 = str_remove(date, "T.*") %>% ymd()) %>% 
   # filter dates
   # filter(date2 %in% min_max_date) %$%
-  # slice(1500:1502) %$%
+  # slice(1:3) %>%
+  filter() %$%
   walk2(
     final_path,
     file_name,
