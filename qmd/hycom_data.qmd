@@ -531,7 +531,7 @@ here(dwnld_path) %>%
   pull(path)  %T>% 
   print() %>%
   {
-    if (FALSE) {
+    if (length(.) > 0 && menu(c("Keep small files", "Delete") == 2)) {
       file_delete(.)
     }
   }
@@ -550,6 +550,12 @@ here(dwnld_path) %>%
   ) %>%
   count(year) %T>% 
   print() 
+```
+```{r}
+if (readline() == "") {
+  print("tes")
+}
+tet <- readline()
 ```
 
 ### 3.3.3 Parallel Download
