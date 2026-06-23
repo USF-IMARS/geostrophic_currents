@@ -168,7 +168,8 @@ aviso_load <- function(data_path, .by = 1) {
 
 #' Load HYCOM-TSIS Data
 #'
-#' Load HYCOM Data using `ncdf4` pacakge
+#' Load HYCOM Data using `ncdf4` pacakge as both a gridded project 
+#' and a raster
 #'
 #' @param data_path Path to data
 #' @param .by Number of days skip
