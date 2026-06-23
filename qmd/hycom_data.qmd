@@ -486,6 +486,7 @@ path_save %>%
   # filter dates
   # filter(date2 %in% min_max_date) %$%
   # filter(year(date2) == 2010) %>% 
+  # filter(between(month(date2), 5, 8)) %>%
   # slice(1:5) %>%
   filter() %T>%
   {
@@ -521,6 +522,34 @@ path_save %>%
     }
   )
 
+# check file size is less than than 1 Kb, then delete 
+here(dwnld_path) %>%
+  dir_ls(regexp = "\\.nc4", recurse = TRUE) %>%
+  file_info() %>%
+  dplyr::arrange(size) %>%
+  dplyr::filter(size < fs_bytes("1Kib")) %>%
+  pull(path)  %T>% 
+  print() %>%
+  {
+    if (FALSE) {
+      file_delete(.)
+    }
+  }
+  
+```
+
+```{r}
+here(dwnld_path) %>%
+  dir_ls(regexp = "\\.nc4", recurse = TRUE) %>% 
+  tibble(file = .) %>%
+  # slice(1:5) %>%
+  mutate(
+    year = str_extract(file, "\\d{4}"),
+    yrmth = str_extract(file, "\\d{4}_\\d{2}"),
+    yrmth = str_replace(yrmth, "_", "/")
+  ) %>%
+  count(year) %T>% 
+  print() 
 ```
 
 ### 3.3.3 Parallel Download
