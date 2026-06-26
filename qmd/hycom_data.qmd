@@ -495,14 +495,17 @@ path_save %>%
     message(paste("Date ranges:", paste(range(.$date2), collapse = " - ")))
   } %$%
   pwalk(
-    list(final_path,
-    file_name,
-    rows, 
-    max_r),
+    list(
+      final_path,
+      file_name,
+      rows, 
+      max_r
+      ),
     \(.url, .file_name, idx, max_row) {
       message(paste(idx, "of", max_row))
       message(paste("HYCOM URL:", .url))
-      message(paste("\nSave Path:", dirname(here(dwnld_path, .file_name))))
+      message(paste("\nDate:", ymd(str_extract(basename(.file_name), "\\d+_\\d+_\\d+")), "\n"))
+      message(paste("Save Path:", dirname(here(dwnld_path, .file_name))))
       message(paste("File name:", basename(.file_name), "\n"))
       
       if (file_exists(here(dwnld_path, .file_name))) {
@@ -531,7 +534,7 @@ here(dwnld_path) %>%
   pull(path)  %T>% 
   print() %>%
   {
-    if (length(.) > 0 && menu(c("Keep small files", "Delete") == 2)) {
+    if (length(.) > 0 && menu(c("Keep small files", "Delete")) == 2) {
       file_delete(.)
     }
   }
@@ -551,12 +554,7 @@ here(dwnld_path) %>%
   count(year) %T>% 
   print() 
 ```
-```{r}
-if (readline() == "") {
-  print("tes")
-}
-tet <- readline()
-```
+
 
 ### 3.3.3 Parallel Download
 
