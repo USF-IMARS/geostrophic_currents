@@ -394,10 +394,6 @@ particles <-
     crs  = "EPSG:4326" # WGS84
   )
 
-# create a list in which results should be stored:
-part_results          <- list()
-previous_position     <- particles
-
 # projection to be used to calculate particle displacement in meters:
 part_proj             <- terra::crs("EPSG:32631")
 
@@ -421,6 +417,10 @@ plot(twin_v)
 
 
 ```{r}
+# create a list in which results should be stored:
+part_results          <- list()
+previous_position     <- particles
+
 out_list <- 1
 # i = 1 # rm later
 
@@ -596,7 +596,7 @@ for (i in 1:length(simulation_time)) {
       
       # particles  
       tidyterra::geom_spatvector(
-        data = part_results[[out_list-1]],
+        data = part_results[[out_list]],
         color = "red"
         ) +
       labs(
