@@ -264,9 +264,9 @@ gd_load <- lapply(
 
 base_plt <- ggplot()
    
-  for (i in seq(length(gd_load))) {
-    base_plt <- base_plt + geom_spatvector(data = gd_load[[i]]) 
-  }
+for (i in seq(length(gd_load))) {
+  base_plt <- base_plt + geom_spatvector(data = gd_load[[i]]) 
+}
 
 # function that extrapolates water currents for NA values
 extend_data <- function(r, band = 21) {
@@ -453,8 +453,8 @@ for (i in 1:length(simulation_time)) {
     # extract u and v components where particle is nearest
     # bilinear = 4 nearest cells
     cbind(
-      "x" = terra::extract(twat_u, previous_position, method = "bilinear", ID = FALSE),
-      "y" = terra::extract(twat_v, previous_position, method = "bilinear", ID = FALSE)
+      "x" = terra::extract(twat_u, previous_position, method = "bilinear", ID = FALSE)[, 1],
+      "y" = terra::extract(twat_v, previous_position, method = "bilinear", ID = FALSE)[, 1]
       )[seq(0, n_particles[i]), ]
   
   ## displace particles with *wind*
@@ -462,8 +462,8 @@ for (i in 1:length(simulation_time)) {
     part_coords[seq(0, n_particles[i]),] +
     simulation_time_step * drift_factor * 
     cbind(
-      "x" = terra::extract(twin_u, previous_position, method = "bilinear", ID = FALSE),
-      "y" = terra::extract(twin_v, previous_position, method = "bilinear", ID = FALSE)
+      "x" = terra::extract(twin_u, previous_position, method = "bilinear", ID = FALSE)[, 1],
+      "y" = terra::extract(twin_v, previous_position, method = "bilinear", ID = FALSE)[, 1]
       )[seq(0, n_particles[i]), ]
   
   
@@ -475,7 +475,7 @@ for (i in 1:length(simulation_time)) {
       "y" = runif(n_particles[i], -1, 1)
       ) * sqrt(diffusion_coeff * simulation_time_step * 6 / 1e4)
 
-  ## turn particle information into a SpatialPointsDataFrame object:
+  ## turn particle information into a spatvector object:
   part_coords <- 
     as.data.frame(part_coords) %>%
     vect(
