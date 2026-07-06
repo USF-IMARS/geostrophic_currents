@@ -11,9 +11,12 @@
 #' 
 #' @param bounds Bounding box consisting of c(xmin, xmax, ymin, ymax).
 #' @param path_copernicusmarine Path to `copernicusmarine.exe` file.
+#' @param dataset_id The dataset ID from Copernicus. (Default: AVISO 1/12°,
+#'                    cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1D)
 #' @param path_save Path for saved data.
 #' @param download Logical to download or not
 #' @param overwrite Logical to overwrite existing data 
+#' @param other_param Other parameters used in the downloade process
 #'
 #' @return Nothing, side effect of download files separated into months
 #' @examples
@@ -23,27 +26,35 @@ aviso_download <- function(
     vars,
     bounds,
     path_copernicusmarine,
+    dataset_id = "cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1D",
     path_save,
-    download = FALSE,
-    overwrite = FALSE) {
+    download   = FALSE,
+    overwrite  = FALSE,
+    other_param = NULL
+    ) {
   month_list <- vector("list", length(months))
   names(month_list) <- format(months, "%B_%Y")
 
   for (i in seq(length(months))) {
     date_i <- months[i]
-    date_range <- c(date_i, date_i + months(1) - days(1))
+    date_range <- c(date_i, date_i + months(1) - lubridate::days(1))
 
     message(paste("\n-----\n\nNew Month:", format(date_i, "%B %Y")))
-    cat(as.character(date_range), sep = "\n")
+    message(paste(as.character(date_range), collapse = " - "))
 
     month_list[[i]] <- c(as.character(date_range), paste(date_range, collapse = "-"))
 
-    prev_files <-
-      dir_ls(path_save) %>%
-      str_detect(paste(date_range, collapse = "-")) %>%
+    prev_date <-
+      fs::dir_ls(path_save) %>%
+      stringr::str_detect(paste(date_range, collapse = "-")) %>%
       any()
-
-    if (prev_files & !overwrite) {
+    
+    prev_id <-
+      fs::dir_ls(path_save) %>%
+      stringr::str_detect(paste(dataset_id, collapse = "-")) %>%
+      any()
+    
+    if (prev_date & prev_id & !overwrite) {
       message("Skipping because date range exists!")
       next
     }
@@ -51,15 +62,16 @@ aviso_download <- function(
     # set date range
     date_range <-
       date_range %>%
-      as_datetime() %>%
-      format_ISO8601()
+      lubridate::as_datetime() %>%
+      lubridate::format_ISO8601()
 
     # set up command to download
     command <-
       paste(
         shQuote(path_copernicusmarine),
         "subset",
-        "--dataset-id cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1D",
+        # "--dataset-id cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1D",
+        paste("--dataset-id", dataset_id),
         paste("--variable", vars, collapse = " "),
         "--start-datetime",    date_range[1],
         "--end-datetime",      date_range[2],
@@ -67,12 +79,16 @@ aviso_download <- function(
         "--maximum-longitude", bounds["xmax"],
         "--minimum-latitude",  bounds["ymin"],
         "--maximum-latitude",  bounds["ymax"],
+        paste(other_param, collapse = " "),
         "-o",
         path_save
       )
 
+    message("Command to copernicus:")
+    message(command)
+    
     if (download) {
-      message("Downloading AVISO+ Date")
+      message("Downloading AVISO+ data")
 
       # execute command to download files
       system(command)
