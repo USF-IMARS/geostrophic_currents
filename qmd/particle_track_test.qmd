@@ -1,0 +1,1372 @@
+---
+title: "2D Particle Tracking Test"
+author: "Sebastian Di Geronimo"
+date: 2026-06-26
+format: html
+editor: source
+---
+
+# 1.0 ---- Summary of Document ----
+
+From blog:
+<https://r-coders-anonymous.blogspot.com/2016/07/2d-particle-tracking-in-r.html>
+
+This uses old packages that will probably need updating:
+
+sp
+raster
+ncdf4
+ncdf.tools - not available
+rgeos - not available
+maptools - not available
+
+
+## Download Data from `Copernicusmarine` App
+
+- using `copernicusmarine.exe` File
+
+From: <https://help.marine.copernicus.eu/en/articles/10750437-copernicus-marine-toolbox-executable-no-installation>
+
+I recommend moving the file to this directory where this project is stored
+
+To start, open `cmd` or `PowerShell` from explorer. `cd` to location where `.exe`
+is located. Then run `copernicusmarine login` and enter "Username" and
+"Password". Once completed, you should be able to run the download
+
+Download Command example:
+
+copernicusmarine subset
+--dataset-id cmems_mod_glo_phy_my_0.083deg_P1D-m
+   --variable vo
+   --variable uo
+   --start-datetime 2018-01-01T00:00:00
+   --end-datetime 2018-02-01T00:00:00
+   --minimum-longitude -3.26
+   --maximum-longitude 9.6
+   --minimum-latitude 50.62
+   --maximum-latitude 62.67
+   --minimum-depth 0.49402499198913574 <----- for water depth
+   --maximum-depth 0.49402499198913574 <----- for water depth
+
+
+# 2.0 ---- Setup ----
+
+## 2.1 Load Libraries
+
+```{r include=FALSE}
+# ```{r setup, include=FALSE}
+# ## load required packages:
+# require(sp)
+# require(raster)
+# require(ncdf4)
+# require(ncdf.tools)
+# require(rgeos) 
+# require(maptools)
+
+if (!nzchar(system.file(package = "librarian"))) 
+  install.packages("librarian")
+
+librarian::shelf(
+  quiet = TRUE,
+  librarian, #conflicted, ggplot2, tibble, tidyr, readr, purrr, dplyr, stringr,
+  # forcats, lubridate, glue, fs, 
+  magrittr, here, ggplot2,
+  
+  # additional
+  sp, raster, ncdf4,
+  terra, metR, tidyterra, dplyr
+)
+
+# conflicts_prefer(
+#   dplyr::filter(), 
+#   dplyr::select()
+#   )
+
+
+# source aviso functions
+source(here("R", "aviso_functions.R"))
+
+# path to executable and path to save data
+path_copernicusmarine <- here("copernicusmarine.exe")
+
+path_save <- here("data", "raw", "particle_tracking")
+
+fs::dir_create(path_save)
+
+plot_out_path <- here("data", "plots", "particle_tracker", Sys.Date())
+
+fs::dir_create(plot_out_path)
+```
+
+
+
+## 2.2 Download Data
+
+URL: <https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description>
+Dataset:         Global Ocean Physics Reanalysis
+ID:              cmems_mod_glo_phy_my_0.083deg_P1D-m
+Resolution:      0.083° × 0.083°
+Temporal Extent: 1 Jan 1993 to 26 May 2026
+Temporal:        Daily
+
+Variables: 
+  Water current:
+  - vo - eastward sea water velocity [m/s]
+  - uo - northward sea water velocity [m/s]
+
+URL: <https://data.marine.copernicus.eu/product/WIND_GLO_PHY_L4_MY_012_006/description>
+Dataset:         Global Ocean Hourly Reprocessed Sea Surface Wind and Stress
+                   from Scatterometer and Model
+ID:              cmems_obs-wind_glo_phy_my_l4_0.125deg_PT1H
+Resolution:      0.125° × 0.125°
+Temporal Extent: 1 Jun 1994 to 18 Feb 2026
+Temporal:        Hourly
+
+Variables: 
+  Wind
+  - eastward_wind - Eastward wind [m/s]
+  - northward_wind - Northward wind [m/s]
+
+
+NOTE: When saving data from copernicus, the data can be stacked with multiple
+time points so should breakup the date ranges as storing as 1 month at a time 
+chunks
+
+Spatial:
+N: 62.67 ymax
+W: -3.26 xmin
+S: 50.62 ymin
+E: 9.60 xmax
+
+```{r base-params}
+# set date range by month
+months <-
+  seq(
+    lubridate::as_date("2018-01-01"),
+    lubridate::as_date("2018-02-01"),
+    by = "1 month"
+    )
+
+# set spatial extent
+part2d_bbox <-
+  c( 
+    xmin = -3.26,
+    xmax = 9.60,
+    ymin = 50.62,
+    ymax = 62.67
+  )
+
+# set to TRUE if downloading data
+download <- FALSE
+# download <- TRUE
+
+# set to TRUE if want to overwrite previous data
+overwrite <- FALSE
+# overwrite <- TRUE
+```
+
+
+```{r water-current-params}
+# dataset id
+dataset_id_phy <- "cmems_mod_glo_phy_my_0.083deg_P1D-m"
+
+# select vars
+vars <-
+  c(
+    "vo",
+    "uo"
+  )
+
+add_params <-
+  c(
+    "--minimum-depth 0.49402499198913574", 
+    "--maximum-depth 0.49402499198913574"
+    )
+
+cat("Date Range: ", format(months[c(1, length(months))], "%B %Y"), sep = "\n- ")
+
+aviso_download(
+  months[1], 
+  vars, 
+  bounds      = part2d_bbox,
+  path_copernicusmarine,
+  dataset_id  = dataset_id_phy,
+  path_save   = path_save,
+  download,
+  overwrite,
+  other_param = add_params
+)
+```
+
+
+```{r wind-vel-params}
+# dataset id
+dataset_id_wind <- "cmems_obs-wind_glo_phy_my_l4_0.125deg_PT1H"
+
+# select vars
+vars <-
+  c(
+    "eastward_wind",
+    "northward_wind"
+  )
+
+cat("Date Range: ", format(months[c(1, length(months))], "%B %Y"), sep = "\n- ")
+
+aviso_download(
+  months[1], 
+  vars, 
+  bounds     = part2d_bbox,
+  path_copernicusmarine,
+  dataset_id = dataset_id_wind,
+  path_save  = path_save,
+  download,
+  overwrite
+)
+```
+
+# 3.0 2D Particle Tracking using `terra`  
+
+
+## STEP 1: load the water currents and wind data
+
+
+```{r func}
+shelf(terra)
+
+## function that reads netcdf files and puts them in a workable stack object:
+read_mover <- function(ncdfile, xvar = "u", yvar = "v") {
+  
+  # u <- stack(ncdfile, varname = xvar)
+  # v <- stack(ncdfile, varname = yvar)
+  u <- terra::rast(ncdfile, subds = xvar)
+  v <- terra::rast(ncdfile, subds = yvar)
+  
+  ## Get time indices:
+  # z_time      <- attr(u, "z")
+  
+  z_time <- terra::time(u)
+  
+  # if (class(z_time[[1]]) == "character") {
+  #   z_time <- as.POSIXct(z_time[[1]], tz = "UTC")
+  # } else {
+  #   z_time_info <- tolower(strsplit(tolower(names(z_time)), " since ")[[1]])
+  #   z_time      <- z_time[[1]]*switch(z_time_info[1], seconds = 1, minutes = 60, hours = 60*60, days = 60*60*24)
+  #   z_time      <- as.POSIXct(z_time, origin = as.POSIXct(z_time_info[2], tz = "UTC"), tz = "UTC")
+  #   # rm(z_time_info)
+  # }
+
+  return(list(u = u, v = v, z = z_time))
+}
+
+read_mover_old <- function(ncdfile, xvar = "u", yvar = "v") {
+  
+  u <- stack(ncdfile, varname = xvar)
+  v <- stack(ncdfile, varname = yvar)
+  
+  ## Get time indices:
+  z_time      <- attr(u, "z")
+  
+  if (class(z_time[[1]]) == "character") {
+    z_time <- as.POSIXct(z_time[[1]], tz = "UTC")
+  } else {
+    z_time_info <- tolower(strsplit(tolower(names(z_time)), " since ")[[1]])
+    z_time      <- z_time[[1]]*switch(z_time_info[1], seconds = 1, minutes = 60, hours = 60*60, days = 60*60*24)
+    z_time      <- as.POSIXct(z_time, origin = as.POSIXct(z_time_info[2], tz = "UTC"), tz = "UTC")
+    # rm(z_time_info)
+  }
+
+  return(list(u = u, v = v, z = z_time))
+}
+
+
+## Countries for which the shorelines are downloaded and plotted
+countries <- c("NLD", "GBR", "FRA")
+
+gd_load <- lapply(
+  as.list(countries),
+  function(x) {
+    gadm <- ""
+    lev <- 0
+    if (x == "NLD") {
+      lev <- 1
+    } else {
+      lev <- 0
+    }
+
+
+    # try(gadm <- raster::getData("GADM", country = x, level = lev))
+
+    gadm <- tryCatch(
+      geodata::gadm(country = x, level = lev, path = tempdir()),
+      error = function(e) NULL
+    )
+
+    # if (class(gadm) == "SpatialPolygonsDataFrame" && lev == 1 && !is.character(gadm)) {
+    #   gadm <- unionSpatialPolygons(gadm, gadm@data$ENGTYPE_1 != "Water body")[2]
+    # }
+
+    if (inherits(gadm, "SpatVector") && lev == 1 && !is.null(gadm)) {
+      gadm <- gadm[gadm$ENGTYPE_1 != "Water body", ]
+      gadm <- terra::aggregate(gadm, by = "GID_1")
+    }
+
+    gadm
+  }
+)
+
+base_plt <- ggplot()
+   
+  for (i in seq(length(gd_load))) {
+    base_plt <- base_plt + geom_spatvector(data = gd_load[[i]]) 
+  }
+
+# function that extrapolates water currents for NA values
+# extend_data <- function(r, band = 21) {
+#   # replace NA values of raster data at coasts with nearest neighbours:
+#   fill_na <- function(x, i = round(band^2 / 2)) {
+#     if (is.na(x)[i]) {
+#       return(mean(x, na.rm = TRUE))
+#     } else {
+#       return(x[i])
+#     }
+#   }
+# 
+#   # r <- setValues(
+#   #   r,
+#   #   getValues(
+#   #     focal(
+#   #       r,
+#   #       w = matrix(1,band,band),
+#   #       fun = fill_na,
+#   #       pad = TRUE, na.rm = FALSE )
+#   #     )
+#   #   )
+# 
+#   terra::values(r) <- terra::values(
+#     terra::focal(
+#       r,
+#       w = matrix(1, band, band),
+#       fun = fill_na,
+#       na.policy = "all",
+#       fillvalue = NA
+#     )
+#   )
+# 
+#   r
+# }
+
+extend_data <- function(r, band = 21) {
+  terra::focal(
+    x         = r,
+    # w         = matrix(1, band, band),
+    w         = band, # square
+    fun       = mean,
+    na.rm     = TRUE,
+    expand    = TRUE,
+    fillvalue = NA,
+    na.policy = "only"
+  )
+}
+```
+
+
+```{r load-data}
+## Read the water current data:
+temp       <-
+  here(path_save) %>%
+  fs::dir_ls(regexp = dataset_id_phy) %>%
+  .[[1]] %>%
+  read_mover("uo", "vo")
+water_u    <- temp$u
+water_v    <- temp$v
+water_time <- temp$z
+
+set.names(water_u, stringr::str_remove(names(water_u), "=\\d.\\d+"))
+set.names(water_v, stringr::str_remove(names(water_v), "=\\d.\\d+"))
+rm(temp)
+
+## Read the wind data:
+temp       <- 
+  here(path_save) %>%
+  fs::dir_ls(regexp = dataset_id_wind) %>%
+  .[[1]] %>%
+  read_mover("northward_wind", "eastward_wind")
+wind_u     <- temp$u
+wind_v     <- temp$v
+wind_time  <- temp$z
+rm(temp)
+```
+
+
+```{r plot-vectors}
+plot(water_u)
+plot(water_v)
+plot(wind_u)
+plot(wind_v)
+```
+
+## STEP 2: specify particle release details
+
+
+```{r}
+# time at which the simulated release should start:
+release_start         <- as.POSIXct("2018-01-02 08:00", tz = "UTC")
+
+# time at which the simulated release should end:
+release_end           <- as.POSIXct("2018-01-04 08:00", tz = "UTC")
+
+# number of particles to release in total:
+# release_n             <- 5000
+release_n             <- 10
+
+# release lon-coordinate:
+release_x             <- 3.7
+
+# release lat-coordinate:
+release_y             <- 52
+
+# release depth (not used yet in simulation)
+release_z             <- 0
+```
+
+
+## STEP 3: specify simulation details
+
+
+```{r}
+# time at which the simulation should start:
+simulation_start_time <- as.POSIXct("2018-01-02 00:00", tz = "UTC")
+
+# time step of simulation in seconds:
+# simulation_time_step  <- 60 * 60 / 4 # 15 min
+simulation_time_step  <- 60 * 60 * 6 # 6 hours
+
+# integer value indicating every n-th time step that should be exported:
+simulation_out_step   <- 2
+
+# time at which the simulation should stop
+simulation_end_time   <- as.POSIXct("2018-01-15 08:00", tz = "UTC")
+
+# create a time series based on the start and end time and the time step:
+simulation_time       <- seq(
+  simulation_start_time, 
+  simulation_end_time - simulation_time_step, 
+  simulation_time_step
+  )
+
+
+```
+
+
+```{r}
+# for each time step determine how many particles are released:
+n_particles           <- rep(NA, length(simulation_time))
+n_particles[simulation_time <= release_start] <- 0
+n_particles[simulation_time >= release_end]   <- release_n
+n_particles[is.na(n_particles)]               <- approx(
+  c(0, release_n), 
+  n = 2 + sum(is.na(n_particles))
+  )$y[c(-1, -(2 + sum(is.na(n_particles))))]
+
+n_particles           <- round(n_particles)
+
+# create a SpatialPointsDataFrame for the particles:
+particles <-
+  data.frame(
+    pos_x = rep(release_x, release_n),
+    pos_y = rep(release_y, release_n),
+    pos_z = rep(release_z, release_n)
+  ) %>%
+  terra::vect(
+    geom = c("pos_x", "pos_y"),
+    crs  = "EPSG:4326" # WGS84
+  )
+
+# coordinates(particles) <- ~ pos_x + pos_y
+# proj4string(particles) <- CRS("+proj=longlat +datum=WGS84")
+
+# particles <- terra::vect(
+#   particles,
+#   geom = c("pos_x", "pos_y"),
+#   # crs = "+proj=longlat +datum=WGS84"
+#   crs = "EPSG:4326"
+# )
+
+
+# create a list in which results should be stored:
+part_results          <- list()
+previous_position     <- particles
+
+# projection to be used to calculate particle displacement in meters:
+# part_proj             <- CRS("+proj=utm +zone=31 +datum=WGS84")
+# part_proj             <- terra::crs("+proj=utm +zone=31 +datum=WGS84")
+part_proj             <- terra::crs("EPSG:32631")
+
+# drift factor indicates with which fraction particles are displaced by the wind speed:
+drift_factor    <- 0.03
+
+# the diffusion coefficient, used in random walk simulation
+diffusion_coeff <- 1e5
+```
+
+## STEP 4: loop all simulation time steps
+
+```{r}
+# plot(rast(water_u, subds  = tsel_c))
+plot(water_u[[tsel_c]])
+plot(extend_data(water_u[[tsel_c]]))
+
+plot(wind_v[[tsel_w]])
+plot(twin_v)
+```
+
+
+```{r}
+out_list <- 1
+# i = 1 # rm later
+
+## start looping the simulation times
+for (i in 1:length(simulation_time)) {
+  print(i)
+  ## Get the water currents that are closest to the current simulation time
+  tdif   <- abs(water_time - simulation_time[i])
+  tsel_c <- which(tdif == min(tdif))[[1]]
+  # twat_u <- extend_data(raster(water_u, tsel_c))
+  # twat_v <- extend_data(raster(water_v, tsel_c))
+  twat_u <- extend_data(water_u[[tsel_c]])
+  twat_v <- extend_data(water_v[[tsel_c]])
+  
+  
+  tdif   <- abs(wind_time - simulation_time[i])
+  tsel_w <- which(tdif == min(tdif))[[1]]
+  # twin_u <- extend_data(raster(wind_u, tsel_w))
+  # twin_v <- extend_data(raster(wind_v, tsel_w))
+  twin_u <- extend_data(wind_u[[tsel_w]])
+  twin_v <- extend_data(wind_v[[tsel_w]])
+
+  ## Extract last known particle locations and transform coordinates into meters:
+  # 1. transforms decimal degree to meters as matrix x, y coords
+  # 2. extract coordinates
+  # part_coords <- coordinates(spTransform(previous_position, part_proj))
+  part_coords <- 
+    terra::project(previous_position, part_proj) %>% 
+    terra::crds()
+
+  ## displace particles with *water_currents*
+  # part_coords[0:n_particles[i],] <- 
+  #   part_coords[0:n_particles[i],] +
+  #   simulation_time_step * cbind(
+  #     raster::extract(twat_u, previous_position, "bilinear"),
+  #     raster::extract(twat_v, previous_position, "bilinear"))[0:n_particles[i],]
+  part_coords[seq(0, n_particles[i]), ] <- 
+    part_coords[seq(0, n_particles[i]), ] +
+    simulation_time_step * # integrate m/s to m i.e m/s * seconds
+    # extract u and v components where particle is nearest
+    # bilinear = 4 nearest cells
+    cbind(
+      "x" = terra::extract(twat_u, previous_position, method = "bilinear")[, 2],
+      "y" = terra::extract(twat_v, previous_position, method = "bilinear")[, 2]
+      )[seq(0, n_particles[i]), ]
+  
+  ## displace particles with *wind*
+  # part_coords[0:n_particles[i],] <- 
+  #   part_coords[0:n_particles[i],] +
+  #   simulation_time_step*drift_factor*cbind(
+  #     raster::extract(twin_u, previous_position, "bilinear"),
+  #     raster::extract(twin_v, previous_position, "bilinear")
+  #     )[0:n_particles[i],]
+  part_coords[seq(0, n_particles[i]),] <- 
+    part_coords[seq(0, n_particles[i]),] +
+    simulation_time_step * drift_factor * cbind(
+      "x" = terra::extract(twin_u, previous_position, method = "bilinear")[, 2],
+      "y" = terra::extract(twin_v, previous_position, method = "bilinear")[, 2]
+      # )[0:n_particles[i],]
+      )[seq(0, n_particles[i]),]
+  
+  
+  ## displace with *random walk* (diffusion):
+  part_coords[0:n_particles[i],] <- 
+    part_coords[0:n_particles[i], ] +
+    cbind(
+      "x" = runif(n_particles[i], -1, 1),
+      "y" = runif(n_particles[i], -1, 1)
+      ) * sqrt(diffusion_coeff * simulation_time_step * 6 / 1e4)
+
+  ## turn particle information into a SpatialPointsDataFrame object:
+  part_coords <- 
+    as.data.frame(part_coords) %>%
+    vect(
+      geom = c("x", "y"),
+      crs  = part_proj
+    ) %>%
+    project(crs(previous_position))
+  
+  # part_coords <- as.data.frame(part_coords)
+  # coordinates(part_coords) <- ~ x + y
+  # proj4string(part_coords) <- part_proj
+  ## backtransform coordinates to original projection:
+  # part_coords <- spTransform(part_coords, CRS(proj4string(previous_position)))
+
+  ## store the new locations in the results list:
+  previous_position     <- part_coords
+
+  ## for each n-th simulation step store the results (where n = simulation_out_step):
+  if ((i - 1) %% simulation_out_step == 0) {
+    
+    # add an indicator of the release state of the particles:
+    part_coords$released <- rep(FALSE, release_n)
+    part_coords$released[0:n_particles[i]] <- TRUE
+    part_results[[out_list]] <- part_coords
+    names(part_results)[out_list] <- paste(
+      format(simulation_time[i], "%Y-%m-%d %H:%M:%S"),
+      attr(as.POSIXlt(simulation_time[i]),"tzone")
+      )
+    
+    
+    # plot limits by adding 2 degrees 
+    # add_deg <- 0.5
+    # plot.lims <- apply(crds(part_coords), 2, mean)
+    # plot.xlim <- c(
+    #   "xmin" = plot.lims[[1]] - add_deg, 
+    #   "xmax" = plot.lims[[1]] + add_deg
+    #   )
+    # plot.ylim <- c(
+    #   "ymin" = plot.lims[[2]] - add_deg, 
+    #   "ymax" = plot.lims[[2]] + add_deg
+    #   )
+    plot.xlim <- c(
+      "xmin" = 2,
+      "xmax" = 5
+      )
+    plot.ylim <- c(
+      "ymin" = 51, 
+      "ymax" = 56
+      )
+    # plot.ylim <- c(part2d_bbox["ymin"], part2d_bbox["ymax"])
+    # plot.xlim <- c(part2d_bbox["xmin"], part2d_bbox["xmax"])
+    
+    scale <- 1
+    aspect.ratio <- 1 / cos(mean(plot.ylim) * pi / 180)
+    
+    wat_arrow <- dplyr::left_join(
+      as.data.frame(water_u[[tsel_c]], xy = TRUE),
+      as.data.frame(water_v[[tsel_c]], xy = TRUE)
+      ) %>%
+      rename(
+        "u" = 3,
+        "v" = 4
+      ) %>%
+      mutate(mag = sqrt(u^2 + v^2))
+
+    win_arrow <- dplyr::left_join(
+      as.data.frame(wind_u[[tsel_w]], xy = TRUE),
+      as.data.frame(wind_v[[tsel_w]], xy = TRUE) 
+      ) %>%
+      rename(
+        "north" = 3,
+        "east" = 4
+      ) %>%
+      mutate(
+        mag = sqrt(north^2 + east^2),
+        north = north * 0.05,
+        east  = east * 0.05
+        )
+    
+    png(
+      # here(plot_out_path, sprintf("out%03d.png", (i - 1)/4)),
+      here(plot_out_path, sprintf("out%03d.png", out_list)),
+      width = 2000,
+      height = 1500,
+      # width  = 640,
+      # height = 480,
+      res    = 300,
+      type   = "cairo"
+      ) 
+  
+  print( 
+    base_plt +
+      
+    # wind
+    metR::geom_arrow(
+      data = win_arrow,
+      mapping = aes(x = x, dx = north, y = y, dy = east, color = mag),
+      alpha = 0.75,
+      skip = 1,
+      size = 0.5,                              # adjust arrow thickness
+      na.rm = TRUE
+      ) +
+    scale_color_viridis_c(name = "Wind Speed") +  
+    ggnewscale::new_scale_color() +
+    
+    # water  
+    metR::geom_arrow(
+      data = wat_arrow,
+      mapping = aes(x = x, dx = u, y = y, dy = v, color = mag),
+      skip = 1,
+      size = 0.5,                              # adjust arrow thickness
+      na.rm = TRUE
+      ) +
+    scale_color_cross_blended_c(name = "Current")  +
+    
+    # particles  
+    tidyterra::geom_spatvector(
+      data = part_results[[out_list]],
+      color = "red"
+      ) +
+    labs(
+      title = paste(
+        format(simulation_time[i], "%Y-%m-%d %H:%M:%S"),
+        attr(as.POSIXlt(simulation_time[i]),"tzone")),
+      x = NULL,
+      y = NULL
+    ) +
+    coord_sf(
+      xlim = plot.xlim,
+      ylim = plot.ylim
+      ) +
+    theme_bw()
+    )
+
+    dev.off()
+    ## extract water current
+    # wat_arrow   <- as.data.frame(coordinates(raster(water_u, tsel_c))) # coord
+    # wat_arrow$u <- as.vector(t(as.matrix(raster(water_u, tsel_c))))    # u 
+    # wat_arrow$v <- as.vector(t(as.matrix(raster(water_v, tsel_c))))    # v
+    # 
+    # # filter to percent of rows
+    # wat_arrow <-  wat_arrow[seq(1, nrow(wat_arrow), by = 4), ]
+    # wat_arrow <- wat_arrow[!(is.na(wat_arrow$u) & is.na(wat_arrow$v)),]
+    
+    ## extract wind current
+    # win_arrow   <- as.data.frame(coordinates(raster(wind_u, tsel_w))) # coord
+    # win_arrow$u <- as.vector(t(as.matrix(raster(wind_u, tsel_w))))    # u 
+    # win_arrow$v <- as.vector(t(as.matrix(raster(wind_v, tsel_w))))    # v
+    # 
+    # win_arrow <- win_arrow[seq(1, nrow(win_arrow), by = 4), ]
+    # win_arrow <- win_arrow[!(is.na(win_arrow$u) & is.na(win_arrow$v)),]
+    # 
+    # # scale <- 0.05
+    # # aspect.ratio <- 1/cos(mean(plot.ylim)*pi/180)
+    # 
+    # par(mar = c(3, 3, 2, 1))
+    # 
+    # # plot points
+
+    # 
+    # plot(
+    #   # part.results[[(i - 1)/4 + 1]], 
+    #   part.results[[out_list]], 
+    #   pch  = "+", 
+    #   # xlim = c(3, 5),
+    #   xlim = plot.xlim, 
+    #   ylim = plot.ylim,
+    #   col = "red",
+    #   cex = 3,
+    #   main = names(part.results)[out_list]
+    #   # main = paste(
+    #     # format(simulation.time[i], "%Y-%m-%d %H:%M:%S"),
+    #     # attr(as.POSIXlt(simulation.time[i]),"tzone"))
+    #   )
+    # 
+    # # water arrow
+    # arrows(
+    #   wat_arrow$x, 
+    #   wat_arrow$y,
+    #   wat_arrow$x + scale * aspect.ratio * wat_arrow$u,
+    #   wat_arrow$y + scale * wat_arrow$v, 
+    #   length = 0.01, 
+    #   col = "lightpink"
+    #   )
+    # 
+    # # wind arrow
+    # arrows(
+    #   win_arrow$x, 
+    #   win_arrow$y,
+    #   win_arrow$x + 0.025 * aspect.ratio * win_arrow$u,
+    #   win_arrow$y + 0.025 * win_arrow$v, 
+    #   length = 0.01, 
+    #   col = "lightblue"
+    #   )
+    # 
+    # ## draw coastlines:
+    # if (is.null(gd_load)) {
+    #   lapply(gd_load, plot, add = TRUE, col = "lightgrey")
+    # }
+    # 
+    # 
+    # axis(1)
+    # axis(2)
+    # dev.off()
+    
+    out_list <- out_list + 1
+  }
+}
+
+## save the resulting particle information:
+# save(part_results, file = "output/out.RData", compress = TRUE)
+```
+```{r}
+
+```
+
+
+
+```{r}
+for (i in seq_along(simulation_time)) {
+  print(i)
+
+  tdif   <- abs(as.numeric(water_time) - as.numeric(simulation_time[i]))
+  tsel_c <- which(tdif == min(tdif))[[1]]
+
+  # twat_u <- extend_data(terra::rast(water_u, tsel_c))
+  twat_u <- extend_data(terra::subset(water_u, tsel_c))
+  # twat_v <- extend_data(terra::rast(water_v, tsel_c))
+  twat_v <- extend_data(terra::subset(water_v, tsel_c))
+
+  tdif   <- abs(as.numeric(wind_time) - as.numeric(simulation_time[i]))
+  tsel_w <- which(tdif == min(tdif))[[1]]
+
+  # twin_u <- extend_data(terra::rast(wind_u, tsel_w))
+  # twin_v <- extend_data(terra::rast(wind_v, tsel_w))
+  twin_u <- extend_data(terra::subset(wind_u, tsel_w))
+  twin_v <- extend_data(terra::subset(wind_v, tsel_w))
+
+  # issues start here
+  stop()
+  
+  pproj <- terra::project(previous_position, part_proj)
+  part_coords <- terra::crds(pproj)
+  
+  # part_coords <- terra::crds(terra::project(previous_position, part_proj))
+
+  uv_wat <- cbind(
+    terra::extract(twat_u, pproj, method = "bilinear", ID = FALSE),
+    terra::extract(twat_v, pproj, method = "bilinear", ID = FALSE)
+  )
+
+  part_coords[seq_along(n_particles[i]), ] <-
+    part_coords[seq_along(n_particles[i]), ] +
+    simulation_time_step * uv_wat[seq_along(n_particles[i]), ]
+
+  uv_win <- cbind(
+    terra::extract(twin_u, pproj, method = "bilinear", ID = FALSE),
+    terra::extract(twin_v, pproj, method = "bilinear", ID = FALSE)
+  )
+
+  part_coords[1:n_particles[i], ] <-
+    part_coords[1:n_particles[i], ] +
+    simulation_time_step * drift_factor * uv_win[1:n_particles[i], ]
+
+  part_coords[1:n_particles[i], ] <-
+    part_coords[1:n_particles[i], ] +
+    cbind(
+      runif(n_particles[i], -1, 1),
+      runif(n_particles[i], -1, 1)
+    ) * sqrt(diffusion_coeff * simulation_time_step * 6 / 1e4)
+
+  part_coords <- as.data.frame(part_coords)
+  particles <- terra::vect(
+    part_coords,
+    geom = c("pos_x", "pos_y"),
+    crs = part_proj
+  )
+
+  previous_position <- terra::project(particles, terra::crs(previous_position))
+
+  if ((i - 1) %% 4 == 0) {
+    part_results[[(i - 1)/4 + 1]] <- previous_position
+    names(part_results)[(i - 1)/4 + 1] <- paste(
+      format(simulation_time[i], "%Y-%m-%d %H:%M:%S"),
+      attr(as.POSIXlt(simulation_time[i]), "tzone")
+    )
+
+    png(sprintf("output\\out%03d.png", (i - 1)/4), 640, 480, res = 75, type = "cairo")
+    plot_ylim <- c(51.9, 53)
+
+    plot(
+      part_results[[(i - 1)/4 + 1]],
+      pch = ".",
+      col = "black",
+      main = paste(
+        format(simulation_time[i], "%Y-%m-%d %H:%M:%S"),
+        attr(as.POSIXlt(simulation_time[i]), "tzone")
+      )
+    )
+
+    wat_arrow <- as.data.frame(terra::crds(terra::rast(water_u, tsel_c)))
+    wat_arrow$u <- as.vector(terra::values(terra::rast(water_u, tsel_c)))
+    wat_arrow$v <- as.vector(terra::values(terra::rast(water_v, tsel_c)))
+
+    scale <- 0.05
+    aspect_ratio <- 1 / cos(mean(plot_ylim) * pi / 180)
+    arrows(
+      wat_arrow$x, wat_arrow$y,
+      wat_arrow$x + scale * aspect_ratio * wat_arrow$u,
+      wat_arrow$y + scale * wat_arrow$v,
+      length = 0.01, col = "lightpink"
+    )
+
+    win_arrow <- as.data.frame(terra::crds(terra::rast(wind_u, tsel_w)))
+    win_arrow$u <- as.vector(terra::values(terra::rast(wind_u, tsel_w)))
+    win_arrow$v <- as.vector(terra::values(terra::rast(wind_v, tsel_w)))
+
+    arrows(
+      win_arrow$x, win_arrow$y,
+      win_arrow$x + scale * aspect_ratio * win_arrow$u,
+      win_arrow$y + scale * win_arrow$v,
+      length = 0.01, col = "lightblue"
+    )
+
+    lapply(gd_load, plot, add = TRUE, col = "lightgrey")
+    text(2.5, 52.9, "r-coders-anonymous.blogspot.com", adj = c(0, 0.5), cex = 1.5)
+    axis(1)
+    axis(2)
+    dev.off()
+  }
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+# ############################################################## #
+
+# Old version ---
+
+```{r func}
+## function that reads netcdf files and puts them in a workable stack object:
+read.mover <- function(ncdfile, xvar = "u", yvar = "v") {
+  u <- stack(ncdfile, varname = xvar)
+  v <- stack(ncdfile, varname = yvar)
+  ## Get time indices:
+  z_time      <- attr(u, "z")
+
+  if (class(z_time[[1]]) == "character") {
+    
+    z_time <- as.POSIXct(z_time[[1]], tz = "UTC")
+    
+  } else {
+    
+    z_time_info <- tolower(strsplit(tolower(names(z_time)), " since ")[[1]])
+    z_time      <- z_time[[1]] * switch(
+      z_time_info[1], 
+      seconds = 1, 
+      minutes = 60, 
+      hours   = 60 * 60, 
+      days    = 60 * 60 * 24
+      )
+    z_time      <- as.POSIXct(
+      z_time, 
+      origin = as.POSIXct(z_time_info[2], tz = "UTC"), 
+      tz = "UTC"
+      )
+    rm(z_time_info)
+  }
+
+  return(list(u = u, v = v, z = z_time))
+}
+
+## Countries for which the shorelines are downloaded and plotted
+countries <- "NLD"
+gd_load <- lapply(
+  as.list(countries),
+  function(x) {
+    gadm <- ""
+    lev <- 0
+    if (x == "NLD") lev <- 1
+    # try(gadm <- raster::getData("GADM", country = x, level = lev))
+
+    gadm <- tryCatch(
+      geodata::gadm(country = x, level = lev, path = tempdir()),
+      error = function(e) NULL
+    )
+
+    if (class(gadm) == "SpatialPolygonsDataFrame" && lev == 1 && !is.character(gadm)) {
+      gadm <- unionSpatialPolygons(gadm, gadm@data$ENGTYPE_1 != "Water body")[2]
+    }
+    gadm
+  }
+)
+
+## function that extrapolates water currents for NA values
+# extend.data <- function(r, band = 21) {
+# extend.data <- function(r, cell_neighbor = 21) {
+# 
+#   ## replace NA values of raster data at coasts with nearest neighbors:
+#   # fill.na <- function(x, i = round(band^2 / 2)) {
+#   fill.na <- function(x, i = round(cell_neighbor^2 / 2)) {
+#     if (is.na(x)[i]) {
+#       return(mean(x, na.rm = TRUE))
+#     } else {
+#       return(x[i])
+#     }
+#   }
+# 
+#   r <- raster::setValues(
+#     x = r,
+#     values = raster::getValues(
+#       raster::focal(
+#         x     = r,
+#         # w     = matrix(1, band, band),
+#         w     = matrix(1, cell_neighbor, cell_neighbor),
+#         fun   = fill.na,
+#         pad   = TRUE,
+#         na.rm = FALSE
+#       )
+#     )
+#   )
+#   r
+# }
+
+extend.data <- function(r, band = 21) {
+  raster::focal(
+    x        = r,
+    w        = matrix(1, band, band),
+    fun      = mean,
+    na.rm    = TRUE,
+    pad      = TRUE,
+    padValue = NA,
+    NAonly   = TRUE
+  )
+}
+
+# plot(raster(water_u, tsel_c))
+# plot(extend.data(raster(water_u, tsel_c)))
+# plot(extend.data2(raster(water_u, tsel_c)))
+```
+
+## STEP 1: load the water currents and wind data
+
+```{r}
+# Read the water current data
+temp <-
+  here(path_save) %>%
+  fs::dir_ls(regexp = dataset_id_phy) %>%
+  .[[1]] %>%
+  read.mover("uo", "vo")
+water_u    <- temp$u
+water_v    <- temp$v
+water_time <- temp$z
+rm(temp)
+
+## Read the wind data:
+temp <- 
+  here(path_save) %>%
+  fs::dir_ls(regexp = dataset_id_wind) %>%
+  .[[1]] %>%
+  read.mover("northward_wind", "eastward_wind")
+wind_u     <- temp$u
+wind_v     <- temp$v
+wind_time  <- temp$z
+rm(temp)
+
+
+
+# ## Read the water current data:
+# temp       <- read.mover("input/MetO-NWS-PHYS-hi-Agg-all-levels_1468581872238.nc",
+#                          "vozocrtx", "vomecrty")
+# water_u    <- temp$u
+# water_v    <- temp$v
+# water_time <- temp$z
+# rm(temp)
+# 
+# ## Read the wind data:
+# temp       <- read.mover("input/CERSAT-GLO-BLENDED_WIND_L4-V5-OBS_FULL_TIME_SERIE_1468508078544.nc",
+#                          "eastward_wind_rms", "northward_wind_rms")
+# wind_u     <- temp$u
+# wind_v     <- temp$v
+# wind_time  <- temp$z
+# rm(temp)
+```
+
+
+## STEP 2: specify particle release details
+
+
+```{r}
+## time at which the simulated release should start:
+release.start <- as.POSIXct("2018-01-02 0:00", tz = "UTC")
+
+## time at which the simulated release should end:
+release.end   <- as.POSIXct("2018-01-03 00:00", tz = "UTC")
+
+## number of particles to release in total:
+# release.n     <- 5000
+release.n     <- 10
+
+## release lon-coordinate:
+release.x     <- 3.7
+
+## release lat-coordinate:
+release.y     <- 52
+
+## release depth (not used yet in simulation)
+release.z     <- 0
+
+```
+
+## STEP 3: specify simulation details
+
+```{r}
+## time at which the simulation should start:
+simulation.start.time <- as.POSIXct("2018-01-02 06:00", tz = "UTC")
+
+## time step of simulation in seconds:
+# simulation.time.step <- 60 * 60 / 4 # every 15 min
+simulation.time.step <- 60 * 60 * 6 # every 6 hours
+
+## integer value indicating every n-th time step that should be exported:
+simulation.out.step   <- 4
+
+## time at which the simulation should stop
+simulation.end.time   <- as.POSIXct("2018-01-10 06:00", tz = "UTC")
+
+## create a time series based on the start and end time and the time step:
+simulation.time       <- seq(
+  simulation.start.time, 
+  simulation.end.time - simulation.time.step, 
+  simulation.time.step
+  )
+
+## for each time step determine how many particles are released:
+n.particles <- rep(NA, length(simulation.time))
+
+# if simulation is before start release
+n.particles[simulation.time <= release.start] <- 0
+
+# if simulation is after end of release
+n.particles[simulation.time >= release.end]   <- release.n
+
+n.particles[is.na(n.particles)] <- approx(
+  c(0, release.n), 
+  n = 2 + sum(is.na(n.particles))
+  )$y[c(-1, -(2 + sum(is.na(n.particles))))]
+
+n.particles <- round(n.particles)
+
+## create a SpatialPointsDataFrame for each release of the particles:
+## number of released particles 
+particles <- data.frame(
+  pos.x    = rep(release.x, release.n), # lon
+  pos.y    = rep(release.y, release.n), # lat
+  pos.z    = rep(release.z, release.n)  # depth
+  )
+coordinates(particles) <- ~ pos.x + pos.y
+proj4string(particles) <- CRS("+proj=longlat +datum=WGS84")
+
+## create a list in which results should be stored:
+part.results          <- list()
+previous.position     <- particles
+
+## projection to be used to calculate particle displacement in meters:
+part.proj <- CRS("+proj=utm +zone=31 +datum=WGS84")
+
+## drift factor indicates with which fraction particles are displaced by the wind speed:
+drift.factor    <- 0.03
+
+## the diffusion coefficient, used in random walk simulation
+diffusion.coeff <- 1e5
+```
+
+## STEP 4: loop all simulation time steps
+
+```{r}
+out_list <- 1
+
+## start looping the simulation times
+for (i in 1:length(simulation.time)) {
+  print(i)
+  
+  ## Get the water currents that are closest to the current simulation time
+  # tdif   <- abs(as.numeric(water_time) - as.numeric(simulation.time[i]))
+  tdif   <- abs(water_time - simulation.time[i])
+  tsel_c <- which(tdif == min(tdif))[[1]] # <-- closest time to the simulation time step
+  twat_u <- extend.data(raster(water_u, tsel_c))
+  twat_v <- extend.data(raster(water_v, tsel_c))
+  
+  # tdif   <- abs(as.numeric(wind_time) - as.numeric(simulation.time[i]))
+  tdif   <- abs(wind_time - simulation.time[i])
+  tsel_w <- which(tdif == min(tdif))[[1]] # <-- closest time to the simulation time step
+  twin_u <- extend.data(raster(wind_u, tsel_w))
+  twin_v <- extend.data(raster(wind_v, tsel_w))
+
+  ## Get the last known particle locations and transform coordinates into meters:
+  # converts decimal degree into meters as matrix x, y coords
+  part.coords <- coordinates(spTransform(previous.position, part.proj))
+
+  ## displace particles with with water_currents
+  part.coords[0:n.particles[i],] <- 
+    part.coords[0:n.particles[i],] + # extract number of coords
+    # add u and v to particle and number of seconds
+    # m/s * s = m in u and v
+    simulation.time.step *
+    cbind(
+      raster::extract(twat_u, previous.position, "bilinear"),
+      raster::extract(twat_v, previous.position, "bilinear")
+      )[0:n.particles[i],]
+  
+  ## displace particles  with wind
+  # same as above but with wind and drift factor
+  part.coords[0:n.particles[i],] <- 
+    part.coords[0:n.particles[i],] +
+    # add u and v from wind with a less movement from wind (drift factor)
+    simulation.time.step * drift.factor *
+    cbind(
+      raster::extract(twin_u, previous.position, "bilinear"),
+      raster::extract(twin_v, previous.position, "bilinear")
+      )[0:n.particles[i],]
+  
+  ## displace with random walk (diffusion):
+  part.coords[0:n.particles[i],] <- 
+    part.coords[0:n.particles[i],] +
+    cbind(
+      runif(n.particles[i], -1, 1),
+      runif(n.particles[i], -1, 1)
+      ) * 
+    sqrt(diffusion.coeff * simulation.time.step * 6 / 1e4)
+
+  ## turn particle information into a SpatialPointsDataFrame object:
+  part.coords <- as.data.frame(part.coords)
+  # coordinates(part.coords) <- ~ pos.x + pos.y # <---
+  coordinates(part.coords) <- ~ coords.x1 + coords.x2
+
+  # add back CRS because when convert to dataframe, will loose it
+  proj4string(part.coords) <- part.proj
+  
+  ## back-transform coordinates to original projection:
+  part.coords <- spTransform(part.coords, CRS(proj4string(previous.position)))
+
+  ## store the new locations in the results list:
+  previous.position     <- part.coords
+
+  
+  
+  ## for each n-th simulation step store the results (where n = simulation.out.step):
+  # if ((i - 1) %% 4 == 0) {
+  if ((i - 1) %% simulation.out.step == 0) {
+    
+    ## add an indicator of the release state of the particles:
+    part.coords <- SpatialPointsDataFrame(
+      part.coords, 
+      data.frame(released = rep(FALSE, release.n))
+      )
+    
+    part.coords@data$released[0:n.particles[i]] <- TRUE
+    # part.results[[(i - 1)/simulation.out.step + 1]] <- part.coords
+    part.results[[out_list]] <- part.coords
+
+    ## name the list element after the time index it represents:
+    # names(part.results)[(i - 1)/simulation.out.step + 1] <- paste(
+    names(part.results)[out_list] <- paste(
+      format(simulation.time[i], "%Y-%m-%d %H:%M:%S"),
+      attr(as.POSIXlt(simulation.time[i]),"tzone")
+      )
+
+    plot.lims <- apply(coordinates(part.coords), 2, mean)
+    plot.ylim <- c("ymin" = plot.lims[[2]] - 2, "ymax" = plot.lims[[2]] + 2)
+    plot.xlim <- c("xmin" = plot.lims[[1]] - 2, "xmax" = plot.lims[[1]] + 2)
+    # plot.ylim <- c(part2d_bbox["ymin"], part2d_bbox["ymax"])
+    # plot.xlim <- c(part2d_bbox["xmin"], part2d_bbox["xmax"])
+    
+    scale <- 1
+    aspect.ratio <- 1/cos(mean(plot.ylim)*pi/180)
+    
+    ## extract water current
+    wat_arrow   <- as.data.frame(coordinates(raster(water_u, tsel_c))) # coord
+    wat_arrow$u <- as.vector(t(as.matrix(raster(water_u, tsel_c))))    # u 
+    wat_arrow$v <- as.vector(t(as.matrix(raster(water_v, tsel_c))))    # v
+    
+    # filter to percent of rows
+    wat_arrow <-  wat_arrow[seq(1, nrow(wat_arrow), by = 4), ]
+    wat_arrow <- wat_arrow[!(is.na(wat_arrow$u) & is.na(wat_arrow$v)),]
+    
+    ## extract wind current
+    win_arrow   <- as.data.frame(coordinates(raster(wind_u, tsel_w))) # coord
+    win_arrow$u <- as.vector(t(as.matrix(raster(wind_u, tsel_w))))    # u 
+    win_arrow$v <- as.vector(t(as.matrix(raster(wind_v, tsel_w))))    # v
+    
+    win_arrow <- win_arrow[seq(1, nrow(win_arrow), by = 4), ]
+    win_arrow <- win_arrow[!(is.na(win_arrow$u) & is.na(win_arrow$v)),]
+    
+    # scale <- 0.05
+    # aspect.ratio <- 1/cos(mean(plot.ylim)*pi/180)
+    
+    par(mar = c(3, 3, 2, 1))
+    
+    # plot points
+    png(
+      # here(plot_out_path, sprintf("out%03d.png", (i - 1)/4)),
+      here(plot_out_path, sprintf("out%03d.png", out_list)),
+      width = 2000, 
+      height = 1500,
+      # width  = 640,
+      # height = 480,
+      res    = 300,
+      type   = "cairo"
+      )
+    
+    plot(
+      # part.results[[(i - 1)/4 + 1]], 
+      part.results[[out_list]], 
+      pch  = "+", 
+      # xlim = c(3, 5),
+      xlim = plot.xlim, 
+      ylim = plot.ylim,
+      col = "red",
+      cex = 3,
+      main = names(part.results)[out_list]
+      # main = paste(
+        # format(simulation.time[i], "%Y-%m-%d %H:%M:%S"),
+        # attr(as.POSIXlt(simulation.time[i]),"tzone"))
+      )
+    
+    # water arrow
+    arrows(
+      wat_arrow$x, 
+      wat_arrow$y,
+      wat_arrow$x + scale * aspect.ratio * wat_arrow$u,
+      wat_arrow$y + scale * wat_arrow$v, 
+      length = 0.01, 
+      col = "lightpink"
+      )
+    
+    # wind arrow
+    arrows(
+      win_arrow$x, 
+      win_arrow$y,
+      win_arrow$x + 0.025 * aspect.ratio * win_arrow$u,
+      win_arrow$y + 0.025 * win_arrow$v, 
+      length = 0.01, 
+      col = "lightblue"
+      )
+    
+    ## draw coastlines:
+    if (is.null(gd_load)) {
+      lapply(gd_load, plot, add = TRUE, col = "lightgrey")
+    }
+    
+    # text(2.5, 52.9, "r-coders-anonymous.blogspot.com", adj = c(0, 0.5), cex = 1.5)
+    axis(1)
+    axis(2)
+    dev.off()
+    
+    out_list <- out_list + 1
+  }
+  
+}
+```
+
+
+```{r}
+## save the resulting particle information:
+save(part.results, file = here(plot_out_path, "..", "out.RData"), compress = TRUE)
+```
+
