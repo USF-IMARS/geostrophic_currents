@@ -53,16 +53,7 @@ copernicusmarine subset
 
 ## 2.1 Load Libraries
 
-```{r include=FALSE}
-# ```{r setup, include=FALSE}
-# ## load required packages:
-# require(sp)
-# require(raster)
-# require(ncdf4)
-# require(ncdf.tools)
-# require(rgeos) 
-# require(maptools)
-
+```{r setup, include=FALSE}
 if (!nzchar(system.file(package = "librarian"))) 
   install.packages("librarian")
 
