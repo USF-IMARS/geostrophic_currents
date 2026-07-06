@@ -70,18 +70,17 @@ librarian::shelf(
   quiet = TRUE,
   librarian, #conflicted, ggplot2, tibble, tidyr, readr, purrr, dplyr, stringr,
   # forcats, lubridate, glue, fs, 
-  magrittr, here, ggplot2,
+  fs, magrittr, dplyr, here, ggplot2, lubridate,  stringr, ggnewscale, 
   
   # additional
-  sp, raster, ncdf4,
-  terra, metR, tidyterra, dplyr
+  # sp, raster, ncdf4,
+  terra, metR, tidyterra,  geodata
 )
 
 # conflicts_prefer(
 #   dplyr::filter(), 
 #   dplyr::select()
 #   )
-
 
 # source aviso functions
 source(here("R", "aviso_functions.R"))
@@ -236,48 +235,13 @@ shelf(terra)
 ## function that reads netcdf files and puts them in a workable stack object:
 read_mover <- function(ncdfile, xvar = "u", yvar = "v") {
   
-  # u <- stack(ncdfile, varname = xvar)
-  # v <- stack(ncdfile, varname = yvar)
   u <- terra::rast(ncdfile, subds = xvar)
   v <- terra::rast(ncdfile, subds = yvar)
   
-  ## Get time indices:
-  # z_time      <- attr(u, "z")
-  
   z_time <- terra::time(u)
-  
-  # if (class(z_time[[1]]) == "character") {
-  #   z_time <- as.POSIXct(z_time[[1]], tz = "UTC")
-  # } else {
-  #   z_time_info <- tolower(strsplit(tolower(names(z_time)), " since ")[[1]])
-  #   z_time      <- z_time[[1]]*switch(z_time_info[1], seconds = 1, minutes = 60, hours = 60*60, days = 60*60*24)
-  #   z_time      <- as.POSIXct(z_time, origin = as.POSIXct(z_time_info[2], tz = "UTC"), tz = "UTC")
-  #   # rm(z_time_info)
-  # }
 
   return(list(u = u, v = v, z = z_time))
 }
-
-read_mover_old <- function(ncdfile, xvar = "u", yvar = "v") {
-  
-  u <- stack(ncdfile, varname = xvar)
-  v <- stack(ncdfile, varname = yvar)
-  
-  ## Get time indices:
-  z_time      <- attr(u, "z")
-  
-  if (class(z_time[[1]]) == "character") {
-    z_time <- as.POSIXct(z_time[[1]], tz = "UTC")
-  } else {
-    z_time_info <- tolower(strsplit(tolower(names(z_time)), " since ")[[1]])
-    z_time      <- z_time[[1]]*switch(z_time_info[1], seconds = 1, minutes = 60, hours = 60*60, days = 60*60*24)
-    z_time      <- as.POSIXct(z_time, origin = as.POSIXct(z_time_info[2], tz = "UTC"), tz = "UTC")
-    # rm(z_time_info)
-  }
-
-  return(list(u = u, v = v, z = z_time))
-}
-
 
 ## Countries for which the shorelines are downloaded and plotted
 countries <- c("NLD", "GBR", "FRA")
@@ -293,17 +257,10 @@ gd_load <- lapply(
       lev <- 0
     }
 
-
-    # try(gadm <- raster::getData("GADM", country = x, level = lev))
-
     gadm <- tryCatch(
       geodata::gadm(country = x, level = lev, path = tempdir()),
       error = function(e) NULL
     )
-
-    # if (class(gadm) == "SpatialPolygonsDataFrame" && lev == 1 && !is.character(gadm)) {
-    #   gadm <- unionSpatialPolygons(gadm, gadm@data$ENGTYPE_1 != "Water body")[2]
-    # }
 
     if (inherits(gadm, "SpatVector") && lev == 1 && !is.null(gadm)) {
       gadm <- gadm[gadm$ENGTYPE_1 != "Water body", ]
@@ -321,40 +278,6 @@ base_plt <- ggplot()
   }
 
 # function that extrapolates water currents for NA values
-# extend_data <- function(r, band = 21) {
-#   # replace NA values of raster data at coasts with nearest neighbours:
-#   fill_na <- function(x, i = round(band^2 / 2)) {
-#     if (is.na(x)[i]) {
-#       return(mean(x, na.rm = TRUE))
-#     } else {
-#       return(x[i])
-#     }
-#   }
-# 
-#   # r <- setValues(
-#   #   r,
-#   #   getValues(
-#   #     focal(
-#   #       r,
-#   #       w = matrix(1,band,band),
-#   #       fun = fill_na,
-#   #       pad = TRUE, na.rm = FALSE )
-#   #     )
-#   #   )
-# 
-#   terra::values(r) <- terra::values(
-#     terra::focal(
-#       r,
-#       w = matrix(1, band, band),
-#       fun = fill_na,
-#       na.policy = "all",
-#       fillvalue = NA
-#     )
-#   )
-# 
-#   r
-# }
-
 extend_data <- function(r, band = 21) {
   terra::focal(
     x         = r,
@@ -453,8 +376,6 @@ simulation_time       <- seq(
   simulation_end_time - simulation_time_step, 
   simulation_time_step
   )
-
-
 ```
 
 
@@ -482,24 +403,11 @@ particles <-
     crs  = "EPSG:4326" # WGS84
   )
 
-# coordinates(particles) <- ~ pos_x + pos_y
-# proj4string(particles) <- CRS("+proj=longlat +datum=WGS84")
-
-# particles <- terra::vect(
-#   particles,
-#   geom = c("pos_x", "pos_y"),
-#   # crs = "+proj=longlat +datum=WGS84"
-#   crs = "EPSG:4326"
-# )
-
-
 # create a list in which results should be stored:
 part_results          <- list()
 previous_position     <- particles
 
 # projection to be used to calculate particle displacement in meters:
-# part_proj             <- CRS("+proj=utm +zone=31 +datum=WGS84")
-# part_proj             <- terra::crs("+proj=utm +zone=31 +datum=WGS84")
 part_proj             <- terra::crs("EPSG:32631")
 
 # drift factor indicates with which fraction particles are displaced by the wind speed:
@@ -531,57 +439,41 @@ for (i in 1:length(simulation_time)) {
   ## Get the water currents that are closest to the current simulation time
   tdif   <- abs(water_time - simulation_time[i])
   tsel_c <- which(tdif == min(tdif))[[1]]
-  # twat_u <- extend_data(raster(water_u, tsel_c))
-  # twat_v <- extend_data(raster(water_v, tsel_c))
   twat_u <- extend_data(water_u[[tsel_c]])
   twat_v <- extend_data(water_v[[tsel_c]])
   
   
   tdif   <- abs(wind_time - simulation_time[i])
   tsel_w <- which(tdif == min(tdif))[[1]]
-  # twin_u <- extend_data(raster(wind_u, tsel_w))
-  # twin_v <- extend_data(raster(wind_v, tsel_w))
   twin_u <- extend_data(wind_u[[tsel_w]])
   twin_v <- extend_data(wind_v[[tsel_w]])
 
   ## Extract last known particle locations and transform coordinates into meters:
   # 1. transforms decimal degree to meters as matrix x, y coords
   # 2. extract coordinates
-  # part_coords <- coordinates(spTransform(previous_position, part_proj))
   part_coords <- 
     terra::project(previous_position, part_proj) %>% 
     terra::crds()
 
   ## displace particles with *water_currents*
-  # part_coords[0:n_particles[i],] <- 
-  #   part_coords[0:n_particles[i],] +
-  #   simulation_time_step * cbind(
-  #     raster::extract(twat_u, previous_position, "bilinear"),
-  #     raster::extract(twat_v, previous_position, "bilinear"))[0:n_particles[i],]
   part_coords[seq(0, n_particles[i]), ] <- 
     part_coords[seq(0, n_particles[i]), ] +
     simulation_time_step * # integrate m/s to m i.e m/s * seconds
     # extract u and v components where particle is nearest
     # bilinear = 4 nearest cells
     cbind(
-      "x" = terra::extract(twat_u, previous_position, method = "bilinear")[, 2],
-      "y" = terra::extract(twat_v, previous_position, method = "bilinear")[, 2]
+      "x" = terra::extract(twat_u, previous_position, method = "bilinear", ID = FALSE),
+      "y" = terra::extract(twat_v, previous_position, method = "bilinear", ID = FALSE)
       )[seq(0, n_particles[i]), ]
   
   ## displace particles with *wind*
-  # part_coords[0:n_particles[i],] <- 
-  #   part_coords[0:n_particles[i],] +
-  #   simulation_time_step*drift_factor*cbind(
-  #     raster::extract(twin_u, previous_position, "bilinear"),
-  #     raster::extract(twin_v, previous_position, "bilinear")
-  #     )[0:n_particles[i],]
   part_coords[seq(0, n_particles[i]),] <- 
     part_coords[seq(0, n_particles[i]),] +
-    simulation_time_step * drift_factor * cbind(
-      "x" = terra::extract(twin_u, previous_position, method = "bilinear")[, 2],
-      "y" = terra::extract(twin_v, previous_position, method = "bilinear")[, 2]
-      # )[0:n_particles[i],]
-      )[seq(0, n_particles[i]),]
+    simulation_time_step * drift_factor * 
+    cbind(
+      "x" = terra::extract(twin_u, previous_position, method = "bilinear", ID = FALSE),
+      "y" = terra::extract(twin_v, previous_position, method = "bilinear", ID = FALSE)
+      )[seq(0, n_particles[i]), ]
   
   
   ## displace with *random walk* (diffusion):
@@ -600,12 +492,6 @@ for (i in 1:length(simulation_time)) {
       crs  = part_proj
     ) %>%
     project(crs(previous_position))
-  
-  # part_coords <- as.data.frame(part_coords)
-  # coordinates(part_coords) <- ~ x + y
-  # proj4string(part_coords) <- part_proj
-  ## backtransform coordinates to original projection:
-  # part_coords <- spTransform(part_coords, CRS(proj4string(previous_position)))
 
   ## store the new locations in the results list:
   previous_position     <- part_coords
@@ -615,7 +501,9 @@ for (i in 1:length(simulation_time)) {
     
     # add an indicator of the release state of the particles:
     part_coords$released <- rep(FALSE, release_n)
+    
     part_coords$released[0:n_particles[i]] <- TRUE
+    
     part_results[[out_list]] <- part_coords
     names(part_results)[out_list] <- paste(
       format(simulation_time[i], "%Y-%m-%d %H:%M:%S"),
@@ -642,10 +530,8 @@ for (i in 1:length(simulation_time)) {
       "ymin" = 51, 
       "ymax" = 56
       )
-    # plot.ylim <- c(part2d_bbox["ymin"], part2d_bbox["ymax"])
-    # plot.xlim <- c(part2d_bbox["xmin"], part2d_bbox["xmax"])
     
-    scale <- 1
+    scale <- 0.05
     aspect.ratio <- 1 / cos(mean(plot.ylim) * pi / 180)
     
     wat_arrow <- dplyr::left_join(
@@ -668,17 +554,14 @@ for (i in 1:length(simulation_time)) {
       ) %>%
       mutate(
         mag = sqrt(north^2 + east^2),
-        north = north * 0.05,
-        east  = east * 0.05
+        north = north * scale,
+        east  = east * scale
         )
     
     png(
-      # here(plot_out_path, sprintf("out%03d.png", (i - 1)/4)),
       here(plot_out_path, sprintf("out%03d.png", out_list)),
       width = 2000,
       height = 1500,
-      # width  = 640,
-      # height = 480,
       res    = 300,
       type   = "cairo"
       ) 
@@ -728,75 +611,6 @@ for (i in 1:length(simulation_time)) {
     )
 
     dev.off()
-    ## extract water current
-    # wat_arrow   <- as.data.frame(coordinates(raster(water_u, tsel_c))) # coord
-    # wat_arrow$u <- as.vector(t(as.matrix(raster(water_u, tsel_c))))    # u 
-    # wat_arrow$v <- as.vector(t(as.matrix(raster(water_v, tsel_c))))    # v
-    # 
-    # # filter to percent of rows
-    # wat_arrow <-  wat_arrow[seq(1, nrow(wat_arrow), by = 4), ]
-    # wat_arrow <- wat_arrow[!(is.na(wat_arrow$u) & is.na(wat_arrow$v)),]
-    
-    ## extract wind current
-    # win_arrow   <- as.data.frame(coordinates(raster(wind_u, tsel_w))) # coord
-    # win_arrow$u <- as.vector(t(as.matrix(raster(wind_u, tsel_w))))    # u 
-    # win_arrow$v <- as.vector(t(as.matrix(raster(wind_v, tsel_w))))    # v
-    # 
-    # win_arrow <- win_arrow[seq(1, nrow(win_arrow), by = 4), ]
-    # win_arrow <- win_arrow[!(is.na(win_arrow$u) & is.na(win_arrow$v)),]
-    # 
-    # # scale <- 0.05
-    # # aspect.ratio <- 1/cos(mean(plot.ylim)*pi/180)
-    # 
-    # par(mar = c(3, 3, 2, 1))
-    # 
-    # # plot points
-
-    # 
-    # plot(
-    #   # part.results[[(i - 1)/4 + 1]], 
-    #   part.results[[out_list]], 
-    #   pch  = "+", 
-    #   # xlim = c(3, 5),
-    #   xlim = plot.xlim, 
-    #   ylim = plot.ylim,
-    #   col = "red",
-    #   cex = 3,
-    #   main = names(part.results)[out_list]
-    #   # main = paste(
-    #     # format(simulation.time[i], "%Y-%m-%d %H:%M:%S"),
-    #     # attr(as.POSIXlt(simulation.time[i]),"tzone"))
-    #   )
-    # 
-    # # water arrow
-    # arrows(
-    #   wat_arrow$x, 
-    #   wat_arrow$y,
-    #   wat_arrow$x + scale * aspect.ratio * wat_arrow$u,
-    #   wat_arrow$y + scale * wat_arrow$v, 
-    #   length = 0.01, 
-    #   col = "lightpink"
-    #   )
-    # 
-    # # wind arrow
-    # arrows(
-    #   win_arrow$x, 
-    #   win_arrow$y,
-    #   win_arrow$x + 0.025 * aspect.ratio * win_arrow$u,
-    #   win_arrow$y + 0.025 * win_arrow$v, 
-    #   length = 0.01, 
-    #   col = "lightblue"
-    #   )
-    # 
-    # ## draw coastlines:
-    # if (is.null(gd_load)) {
-    #   lapply(gd_load, plot, add = TRUE, col = "lightgrey")
-    # }
-    # 
-    # 
-    # axis(1)
-    # axis(2)
-    # dev.off()
     
     out_list <- out_list + 1
   }
@@ -805,125 +619,122 @@ for (i in 1:length(simulation_time)) {
 ## save the resulting particle information:
 # save(part_results, file = "output/out.RData", compress = TRUE)
 ```
-```{r}
-
-```
 
 
 
 ```{r}
-for (i in seq_along(simulation_time)) {
-  print(i)
-
-  tdif   <- abs(as.numeric(water_time) - as.numeric(simulation_time[i]))
-  tsel_c <- which(tdif == min(tdif))[[1]]
-
-  # twat_u <- extend_data(terra::rast(water_u, tsel_c))
-  twat_u <- extend_data(terra::subset(water_u, tsel_c))
-  # twat_v <- extend_data(terra::rast(water_v, tsel_c))
-  twat_v <- extend_data(terra::subset(water_v, tsel_c))
-
-  tdif   <- abs(as.numeric(wind_time) - as.numeric(simulation_time[i]))
-  tsel_w <- which(tdif == min(tdif))[[1]]
-
-  # twin_u <- extend_data(terra::rast(wind_u, tsel_w))
-  # twin_v <- extend_data(terra::rast(wind_v, tsel_w))
-  twin_u <- extend_data(terra::subset(wind_u, tsel_w))
-  twin_v <- extend_data(terra::subset(wind_v, tsel_w))
-
-  # issues start here
-  stop()
-  
-  pproj <- terra::project(previous_position, part_proj)
-  part_coords <- terra::crds(pproj)
-  
-  # part_coords <- terra::crds(terra::project(previous_position, part_proj))
-
-  uv_wat <- cbind(
-    terra::extract(twat_u, pproj, method = "bilinear", ID = FALSE),
-    terra::extract(twat_v, pproj, method = "bilinear", ID = FALSE)
-  )
-
-  part_coords[seq_along(n_particles[i]), ] <-
-    part_coords[seq_along(n_particles[i]), ] +
-    simulation_time_step * uv_wat[seq_along(n_particles[i]), ]
-
-  uv_win <- cbind(
-    terra::extract(twin_u, pproj, method = "bilinear", ID = FALSE),
-    terra::extract(twin_v, pproj, method = "bilinear", ID = FALSE)
-  )
-
-  part_coords[1:n_particles[i], ] <-
-    part_coords[1:n_particles[i], ] +
-    simulation_time_step * drift_factor * uv_win[1:n_particles[i], ]
-
-  part_coords[1:n_particles[i], ] <-
-    part_coords[1:n_particles[i], ] +
-    cbind(
-      runif(n_particles[i], -1, 1),
-      runif(n_particles[i], -1, 1)
-    ) * sqrt(diffusion_coeff * simulation_time_step * 6 / 1e4)
-
-  part_coords <- as.data.frame(part_coords)
-  particles <- terra::vect(
-    part_coords,
-    geom = c("pos_x", "pos_y"),
-    crs = part_proj
-  )
-
-  previous_position <- terra::project(particles, terra::crs(previous_position))
-
-  if ((i - 1) %% 4 == 0) {
-    part_results[[(i - 1)/4 + 1]] <- previous_position
-    names(part_results)[(i - 1)/4 + 1] <- paste(
-      format(simulation_time[i], "%Y-%m-%d %H:%M:%S"),
-      attr(as.POSIXlt(simulation_time[i]), "tzone")
-    )
-
-    png(sprintf("output\\out%03d.png", (i - 1)/4), 640, 480, res = 75, type = "cairo")
-    plot_ylim <- c(51.9, 53)
-
-    plot(
-      part_results[[(i - 1)/4 + 1]],
-      pch = ".",
-      col = "black",
-      main = paste(
-        format(simulation_time[i], "%Y-%m-%d %H:%M:%S"),
-        attr(as.POSIXlt(simulation_time[i]), "tzone")
-      )
-    )
-
-    wat_arrow <- as.data.frame(terra::crds(terra::rast(water_u, tsel_c)))
-    wat_arrow$u <- as.vector(terra::values(terra::rast(water_u, tsel_c)))
-    wat_arrow$v <- as.vector(terra::values(terra::rast(water_v, tsel_c)))
-
-    scale <- 0.05
-    aspect_ratio <- 1 / cos(mean(plot_ylim) * pi / 180)
-    arrows(
-      wat_arrow$x, wat_arrow$y,
-      wat_arrow$x + scale * aspect_ratio * wat_arrow$u,
-      wat_arrow$y + scale * wat_arrow$v,
-      length = 0.01, col = "lightpink"
-    )
-
-    win_arrow <- as.data.frame(terra::crds(terra::rast(wind_u, tsel_w)))
-    win_arrow$u <- as.vector(terra::values(terra::rast(wind_u, tsel_w)))
-    win_arrow$v <- as.vector(terra::values(terra::rast(wind_v, tsel_w)))
-
-    arrows(
-      win_arrow$x, win_arrow$y,
-      win_arrow$x + scale * aspect_ratio * win_arrow$u,
-      win_arrow$y + scale * win_arrow$v,
-      length = 0.01, col = "lightblue"
-    )
-
-    lapply(gd_load, plot, add = TRUE, col = "lightgrey")
-    text(2.5, 52.9, "r-coders-anonymous.blogspot.com", adj = c(0, 0.5), cex = 1.5)
-    axis(1)
-    axis(2)
-    dev.off()
-  }
-}
+# for (i in seq_along(simulation_time)) {
+#   print(i)
+# 
+#   tdif   <- abs(as.numeric(water_time) - as.numeric(simulation_time[i]))
+#   tsel_c <- which(tdif == min(tdif))[[1]]
+# 
+#   # twat_u <- extend_data(terra::rast(water_u, tsel_c))
+#   twat_u <- extend_data(terra::subset(water_u, tsel_c))
+#   # twat_v <- extend_data(terra::rast(water_v, tsel_c))
+#   twat_v <- extend_data(terra::subset(water_v, tsel_c))
+# 
+#   tdif   <- abs(as.numeric(wind_time) - as.numeric(simulation_time[i]))
+#   tsel_w <- which(tdif == min(tdif))[[1]]
+# 
+#   # twin_u <- extend_data(terra::rast(wind_u, tsel_w))
+#   # twin_v <- extend_data(terra::rast(wind_v, tsel_w))
+#   twin_u <- extend_data(terra::subset(wind_u, tsel_w))
+#   twin_v <- extend_data(terra::subset(wind_v, tsel_w))
+# 
+#   # issues start here
+#   stop()
+#   
+#   pproj <- terra::project(previous_position, part_proj)
+#   part_coords <- terra::crds(pproj)
+#   
+#   # part_coords <- terra::crds(terra::project(previous_position, part_proj))
+# 
+#   uv_wat <- cbind(
+#     terra::extract(twat_u, pproj, method = "bilinear", ID = FALSE),
+#     terra::extract(twat_v, pproj, method = "bilinear", ID = FALSE)
+#   )
+# 
+#   part_coords[seq_along(n_particles[i]), ] <-
+#     part_coords[seq_along(n_particles[i]), ] +
+#     simulation_time_step * uv_wat[seq_along(n_particles[i]), ]
+# 
+#   uv_win <- cbind(
+#     terra::extract(twin_u, pproj, method = "bilinear", ID = FALSE),
+#     terra::extract(twin_v, pproj, method = "bilinear", ID = FALSE)
+#   )
+# 
+#   part_coords[1:n_particles[i], ] <-
+#     part_coords[1:n_particles[i], ] +
+#     simulation_time_step * drift_factor * uv_win[1:n_particles[i], ]
+# 
+#   part_coords[1:n_particles[i], ] <-
+#     part_coords[1:n_particles[i], ] +
+#     cbind(
+#       runif(n_particles[i], -1, 1),
+#       runif(n_particles[i], -1, 1)
+#     ) * sqrt(diffusion_coeff * simulation_time_step * 6 / 1e4)
+# 
+#   part_coords <- as.data.frame(part_coords)
+#   particles <- terra::vect(
+#     part_coords,
+#     geom = c("pos_x", "pos_y"),
+#     crs = part_proj
+#   )
+# 
+#   previous_position <- terra::project(particles, terra::crs(previous_position))
+# 
+#   if ((i - 1) %% 4 == 0) {
+#     part_results[[(i - 1)/4 + 1]] <- previous_position
+#     names(part_results)[(i - 1)/4 + 1] <- paste(
+#       format(simulation_time[i], "%Y-%m-%d %H:%M:%S"),
+#       attr(as.POSIXlt(simulation_time[i]), "tzone")
+#     )
+# 
+#     png(sprintf("output\\out%03d.png", (i - 1)/4), 640, 480, res = 75, type = "cairo")
+#     plot_ylim <- c(51.9, 53)
+# 
+#     plot(
+#       part_results[[(i - 1)/4 + 1]],
+#       pch = ".",
+#       col = "black",
+#       main = paste(
+#         format(simulation_time[i], "%Y-%m-%d %H:%M:%S"),
+#         attr(as.POSIXlt(simulation_time[i]), "tzone")
+#       )
+#     )
+# 
+#     wat_arrow <- as.data.frame(terra::crds(terra::rast(water_u, tsel_c)))
+#     wat_arrow$u <- as.vector(terra::values(terra::rast(water_u, tsel_c)))
+#     wat_arrow$v <- as.vector(terra::values(terra::rast(water_v, tsel_c)))
+# 
+#     scale <- 0.05
+#     aspect_ratio <- 1 / cos(mean(plot_ylim) * pi / 180)
+#     arrows(
+#       wat_arrow$x, wat_arrow$y,
+#       wat_arrow$x + scale * aspect_ratio * wat_arrow$u,
+#       wat_arrow$y + scale * wat_arrow$v,
+#       length = 0.01, col = "lightpink"
+#     )
+# 
+#     win_arrow <- as.data.frame(terra::crds(terra::rast(wind_u, tsel_w)))
+#     win_arrow$u <- as.vector(terra::values(terra::rast(wind_u, tsel_w)))
+#     win_arrow$v <- as.vector(terra::values(terra::rast(wind_v, tsel_w)))
+# 
+#     arrows(
+#       win_arrow$x, win_arrow$y,
+#       win_arrow$x + scale * aspect_ratio * win_arrow$u,
+#       win_arrow$y + scale * win_arrow$v,
+#       length = 0.01, col = "lightblue"
+#     )
+# 
+#     lapply(gd_load, plot, add = TRUE, col = "lightgrey")
+#     text(2.5, 52.9, "r-coders-anonymous.blogspot.com", adj = c(0, 0.5), cex = 1.5)
+#     axis(1)
+#     axis(2)
+#     dev.off()
+#   }
+# }
 ```
 
 
