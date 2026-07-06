@@ -289,7 +289,7 @@ extend_data <- function(r, band = 21) {
 temp       <-
   here(path_save) %>%
   fs::dir_ls(regexp = dataset_id_phy) %>%
-  .[[1]] %>%
+  .[[3]] %>%
   read_mover("uo", "vo")
 water_u    <- temp$u
 water_v    <- temp$v
@@ -303,7 +303,7 @@ rm(temp)
 temp       <- 
   here(path_save) %>%
   fs::dir_ls(regexp = dataset_id_wind) %>%
-  .[[1]] %>%
+  .[[3]] %>%
   read_mover("northward_wind", "eastward_wind")
 wind_u     <- temp$u
 wind_v     <- temp$v
@@ -557,48 +557,61 @@ for (i in 1:length(simulation_time)) {
       type   = "cairo"
       ) 
   
-  print( 
-    base_plt +
+  
+    print( 
+      base_plt +
+        
+      # wind
+      metR::geom_arrow(
+        data = win_arrow,
+        mapping = aes(x = x, dx = north, y = y, dy = east, color = mag),
+        alpha = 0.75,
+        skip = 1,
+        size = 0.5,                              # adjust arrow thickness
+        na.rm = TRUE
+        ) +
+      scale_color_viridis_c(
+        name   = "Wind Speed", 
+        breaks = seq(0, 20, 5),
+        limits = c(0, 20),
+        oob    = scales::oob_squish
+        ) +  
+        
+      ggnewscale::new_scale_color() +
       
-    # wind
-    metR::geom_arrow(
-      data = win_arrow,
-      mapping = aes(x = x, dx = north, y = y, dy = east, color = mag),
-      alpha = 0.75,
-      skip = 1,
-      size = 0.5,                              # adjust arrow thickness
-      na.rm = TRUE
+      # water  
+      metR::geom_arrow(
+        data    = wat_arrow,
+        mapping = aes(x = x, dx = u, y = y, dy = v, color = mag),
+        skip    = 1,
+        size    = 0.5,                              # adjust arrow thickness
+        na.rm   = TRUE
+        ) +
+      scale_color_cross_blended_c(
+        name   = "Current", 
+        breaks = seq(0, 3, 1),
+        limits = c(0, 3),
+        oob    = scales::oob_squish,
+        )  +
+      
+      # particles  
+      tidyterra::geom_spatvector(
+        data = part_results[[out_list-1]],
+        color = "red"
+        ) +
+      labs(
+        title = paste(
+          format(simulation_time[i], "%Y-%m-%d %H:%M:%S"),
+          attr(as.POSIXlt(simulation_time[i]),"tzone")),
+        x = NULL,
+        y = NULL
       ) +
-    scale_color_viridis_c(name = "Wind Speed") +  
-    ggnewscale::new_scale_color() +
-    
-    # water  
-    metR::geom_arrow(
-      data = wat_arrow,
-      mapping = aes(x = x, dx = u, y = y, dy = v, color = mag),
-      skip = 1,
-      size = 0.5,                              # adjust arrow thickness
-      na.rm = TRUE
-      ) +
-    scale_color_cross_blended_c(name = "Current")  +
-    
-    # particles  
-    tidyterra::geom_spatvector(
-      data = part_results[[out_list]],
-      color = "red"
-      ) +
-    labs(
-      title = paste(
-        format(simulation_time[i], "%Y-%m-%d %H:%M:%S"),
-        attr(as.POSIXlt(simulation_time[i]),"tzone")),
-      x = NULL,
-      y = NULL
-    ) +
-    coord_sf(
-      xlim = plot.xlim,
-      ylim = plot.ylim
-      ) +
-    theme_bw()
+   
+      coord_sf(
+        xlim = plot.xlim,
+        ylim = plot.ylim
+        ) +
+      theme_bw()
     )
 
     dev.off()
