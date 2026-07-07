@@ -30,10 +30,10 @@ librarian::shelf(
   terra, metR, tidyterra,  geodata
 )
 
-conflicts_prefer(
-  dplyr::filter(), 
-  dplyr::select()
-  )
+# conflicts_prefer(
+#   dplyr::filter(), 
+#   dplyr::select()
+#   )
   
 # source aviso functions
 source(here("R", "aviso_functions.R"))
@@ -78,7 +78,8 @@ hycom_filt_path <-
       as_date("2017-10-11") - days(10), 
       as_date("2017-10-12") + days(5)
       )
-    ) 
+  ) %T>%
+  print()
 ```
 
 
@@ -157,6 +158,7 @@ read_mover <- function(ncdfile, xvar = "u", yvar = "v", hycom_time = FALSE) {
       as.numeric(str_extract(names(u), "MT=(.*)", 1)),
       origin = as_date("1900-12-31")
     )
+    z_time <- lubridate::as_datetime(z_time)
   }
   
   return(list(u = u, v = v, z = z_time))
@@ -221,6 +223,7 @@ temp <-
 water_u    <- temp$u
 water_v    <- temp$v
 water_time <- temp$z
+rm(temp)
 
 ## Read the wind data:
 temp       <- 
@@ -245,22 +248,23 @@ plot(wind_v)
 
 ## STEP 2: specify particle release details
 
+
 ```{r}
 # time at which the simulated release should start:
-release_start         <- as.POSIXct(months[1] + days(3), tz = "UTC")
+release_start         <- as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC")
 
 # time at which the simulated release should end:
-release_end           <- as.POSIXct(months[2] - days(3), tz = "UTC")
+release_end           <- as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC")
 
 # number of particles to release in total:
 # release_n             <- 5000
 release_n             <- 10
 
 # release lon-coordinate:
-release_x             <- 
+release_x             <- -81.3
 
 # release lat-coordinate:
-release_y             <- 
+release_y             <- 25.535
 
 # release depth (not used yet in simulation)
 release_z             <- 0
@@ -270,7 +274,7 @@ release_z             <- 0
 
 ```{r}
 # time at which the simulation should start:
-simulation_start_time <- as.POSIXct(months[1], tz = "UTC")
+simulation_start_time <- as.POSIXct(as_datetime(months[1]), tz = "UTC")
 
 # time step of simulation in seconds:
 # simulation_time_step  <- 60 * 60 / 4 # 15 min
@@ -280,14 +284,15 @@ simulation_time_step  <- 60 * 60 * 6 # 6 hours
 simulation_out_step   <- 2
 
 # time at which the simulation should stop
-simulation_end_time   <- as.POSIXct(months[2], tz = "UTC")
+simulation_end_time   <- as.POSIXct(as_datetime(months[2]), tz = "UTC")
 
 # create a time series based on the start and end time and the time step:
 simulation_time       <- seq(
   simulation_start_time, 
   simulation_end_time - simulation_time_step, 
   simulation_time_step
-  )
+  ) %T>%
+  print()
 ```
 
 
@@ -325,6 +330,8 @@ drift_factor    <- 0.03
 diffusion_coeff <- 1e5
 ```
 
+TODO: add coastline boundary
+TODO: add in if NA extract then replace with previous value
 
 ```{r}
 # create a list in which results should be stored:
@@ -352,10 +359,11 @@ for (i in 1:length(simulation_time)) {
   ## Extract last known particle locations and transform coordinates into meters:
   # 1. transforms decimal degree to meters as matrix x, y coords
   # 2. extract coordinates
-  part_coords <- 
+  part_coords <- prev_coords <- 
     terra::project(previous_position, part_proj) %>% 
     terra::crds()
 
+  
   ## displace particles with *water_currents*
   part_coords[seq(0, n_particles[i]), ] <- 
     part_coords[seq(0, n_particles[i]), ] +
@@ -367,6 +375,12 @@ for (i in 1:length(simulation_time)) {
       "y" = terra::extract(twat_v, previous_position, method = "bilinear", ID = FALSE)[, 1]
       )[seq(0, n_particles[i]), ]
   
+  if (any(is.nan(part_coords))) {
+    bad_rows <- unique(which(arr.ind = TRUE, is.nan(part_coords))[, 1])
+    part_coords[bad_rows, ] <- prev_coords[bad_rows,]
+    prev_coords <- part_coords
+  }
+  
   ## displace particles with *wind*
   part_coords[seq(0, n_particles[i]),] <- 
     part_coords[seq(0, n_particles[i]),] +
@@ -376,6 +390,11 @@ for (i in 1:length(simulation_time)) {
       "y" = terra::extract(twin_v, previous_position, method = "bilinear", ID = FALSE)[, 1]
       )[seq(0, n_particles[i]), ]
   
+
+  if (any(is.nan(part_coords))) {
+    bad_rows <- unique(which(arr.ind = TRUE, is.nan(part_coords))[, 1])
+    part_coords[bad_rows, ] <- prev_coords[bad_rows,]
+   }
   
   ## displace with *random walk* (diffusion):
   part_coords[0:n_particles[i],] <- 
@@ -487,7 +506,7 @@ for (i in 1:length(simulation_time)) {
       metR::geom_arrow(
         data    = wat_arrow,
         mapping = aes(x = x, dx = u, y = y, dy = v, color = mag),
-        skip    = 1,
+        skip = 10,
         size    = 0.5,                              # adjust arrow thickness
         na.rm   = TRUE
         ) +
