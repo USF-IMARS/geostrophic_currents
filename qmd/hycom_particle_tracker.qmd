@@ -46,6 +46,7 @@ path_save <- here("data", "raw", "hycom_particle_tracking")
 fs::dir_create(path_save)
 
 plot_out_path <- here("data", "plots", "hycom_particle_tracker", Sys.Date())
+plot_out_path <- here("data", "plots", "hycom_particle_tracker", paste0("keys_", Sys.Date()))
 
 fs::dir_create(plot_out_path)
 ```
@@ -250,57 +251,105 @@ plot(wind_v)
 
 
 ```{r}
-# time at which the simulated release should start:
-release_start         <- as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC")
+rel_params <- list(
+  # "start"  = as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC"),
+  # "end"    = as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC"),
+  "start"  = as.POSIXct(as_datetime(months[1]), tz = "UTC"),
+  "end"    = as.POSIXct(as_datetime(months[1]) + days(1), tz = "UTC"),
+  "num"    = 10,
+  "coords" = c(
+    -83, # lon
+    24,  # lat
+    0    # depth not used in simulation
+    )
+  ) %T>% 
+  print()
 
-# time at which the simulated release should end:
-release_end           <- as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC")
-
-# number of particles to release in total:
-# release_n             <- 5000
-release_n             <- 10
-
-# release lon-coordinate:
-release_x             <- -81.3
-
-# release lat-coordinate:
-release_y             <- 25.535
-
-# release depth (not used yet in simulation)
-release_z             <- 0
+# # time at which the simulated release should start:
+# release_start         <- as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC")
+# 
+# # time at which the simulated release should end:
+# release_end           <- as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC")
+# 
+# # number of particles to release in total:
+# # release_n             <- 5000
+# release_n             <- 10
+# 
+# # release coords
+# rel_coords <- 
+#   c(
+#     -83, # lon
+#     24,  # lat
+#     0    # depth not used in simulation
+#   )
+# 
+# # # release lon-coordinate:
+# release_x             <- -81.3
+# release_x             <- -83
+# 
+# # release lat-coordinate:
+# release_y             <- 25.535
+# release_y             <- 24
+# 
+# # release depth (not used yet in simulation)
+# release_z             <- 0
 ```
 
 ## STEP 3: specify simulation details
 
 ```{r}
-# time at which the simulation should start:
-simulation_start_time <- as.POSIXct(as_datetime(months[1]), tz = "UTC")
+# time at which the simulation should start and end:
+sim_param <- list(
+  "start"    = as.POSIXct(as_datetime(months[1]), tz = "UTC"), # start
+  "end"      = as.POSIXct(as_datetime(months[2]), tz = "UTC"), # end
+  # "end"      = as.POSIXct(as_datetime(months[1]) + days(2), tz = "UTC"), # end
+  # "step"     = 60 * 60 / 4, # seconds per step 0.25 hr
+  # "step"     = 60 * 60 * 6, # seconds per step 6 hr
+  "step"     = 60 * 60 * 3, # seconds per step 3 hr
+  # "step"     = 60 * 60, # seconds per step 1 hr
+  "plt_step" = 2 # plot every n-th time
+) %T>% 
+  print()
 
-# time step of simulation in seconds:
-# simulation_time_step  <- 60 * 60 / 4 # 15 min
-simulation_time_step  <- 60 * 60 * 6 # 6 hours
-
-# integer value indicating every n-th time step that should be exported:
-simulation_out_step   <- 2
-
-# time at which the simulation should stop
-simulation_end_time   <- as.POSIXct(as_datetime(months[2]), tz = "UTC")
-
-# create a time series based on the start and end time and the time step:
-simulation_time       <- seq(
-  simulation_start_time, 
-  simulation_end_time - simulation_time_step, 
-  simulation_time_step
+simulation_time <- seq(
+  sim_param[["start"]], 
+  sim_param[["end"]] - sim_param[["step"]], 
+  sim_param[["step"]]
   ) %T>%
   print()
+
+# # time at which the simulation should start:
+# simulation_start_time <- as.POSIXct(as_datetime(months[1]), tz = "UTC")
+# 
+# # time at which the simulation should stop
+# simulation_end_time   <- as.POSIXct(as_datetime(months[2]), tz = "UTC")
+# 
+# # time step of simulation in seconds:
+# # simulation_time_step  <- 60 * 60 / 4 # 15 min
+# simulation_time_step  <- 60 * 60 * 6 # 6 hours
+# simulation_time_step  <- 60 * 60 # 1 hours
+# 
+# # integer value indicating every n-th time step that should be exported:
+# simulation_out_step   <- 2
+# 
+# # create a time series based on the start and end time and the time step:
+# simulation_time       <- seq(
+#   simulation_start_time, 
+#   simulation_end_time - simulation_time_step, 
+#   simulation_time_step
+#   ) %T>%
+#   print()
 ```
 
 
 ```{r}
 # for each time step determine how many particles are released:
 n_particles           <- rep(NA, length(simulation_time))
-n_particles[simulation_time <= release_start] <- 0
-n_particles[simulation_time >= release_end]   <- release_n
+# n_particles[simulation_time <= release_start] <- 0
+# n_particles[simulation_time >= release_end]   <- release_n
+n_particles[simulation_time <= rel_params[["start"]]] <- 0
+n_particles[simulation_time >= rel_params[["end"]]]   <- rel_params[["num"]]
+
 n_particles[is.na(n_particles)]               <- approx(
   c(0, release_n), 
   n = 2 + sum(is.na(n_particles))
@@ -311,9 +360,12 @@ n_particles           <- round(n_particles)
 # create a SpatialPointsDataFrame for the particles:
 particles <-
   data.frame(
-    pos_x = rep(release_x, release_n),
-    pos_y = rep(release_y, release_n),
-    pos_z = rep(release_z, release_n)
+    # pos_x = rep(release_x, release_n),
+    # pos_y = rep(release_y, release_n),
+    # pos_z = rep(release_z, release_n)
+    pos_x = rep(rel_coords[1], release_n),
+    pos_y = rep(rel_coords[2], release_n),
+    pos_z = rep(rel_coords[3], release_n)
   ) %>%
   terra::vect(
     geom = c("pos_x", "pos_y"),
@@ -342,8 +394,8 @@ out_list <- 1
 # i = 1 # rm later
 
 ## start looping the simulation times
-for (i in 1:length(simulation_time)) {
-  print(i)
+for (i in seq(length(simulation_time))) {
+  message(paste(i, "of", length(simulation_time)))
   ## Get the water currents that are closest to the current simulation time
   tdif   <- abs(water_time - simulation_time[i])
   tsel_c <- which(tdif == min(tdif))[[1]]
@@ -367,7 +419,8 @@ for (i in 1:length(simulation_time)) {
   ## displace particles with *water_currents*
   part_coords[seq(0, n_particles[i]), ] <- 
     part_coords[seq(0, n_particles[i]), ] +
-    simulation_time_step * # integrate m/s to m i.e m/s * seconds
+    # simulation_time_step * # integrate m/s to m i.e m/s * seconds
+    sim_param[["step"]] * # integrate m/s to m i.e m/s * seconds
     # extract u and v components where particle is nearest
     # bilinear = 4 nearest cells
     cbind(
@@ -384,7 +437,8 @@ for (i in 1:length(simulation_time)) {
   ## displace particles with *wind*
   part_coords[seq(0, n_particles[i]),] <- 
     part_coords[seq(0, n_particles[i]),] +
-    simulation_time_step * drift_factor * 
+    # simulation_time_step * drift_factor * 
+    sim_param[["step"]] * drift_factor * 
     cbind(
       "x" = terra::extract(twin_u, previous_position, method = "bilinear", ID = FALSE)[, 1],
       "y" = terra::extract(twin_v, previous_position, method = "bilinear", ID = FALSE)[, 1]
@@ -402,7 +456,8 @@ for (i in 1:length(simulation_time)) {
     cbind(
       "x" = runif(n_particles[i], -1, 1),
       "y" = runif(n_particles[i], -1, 1)
-      ) * sqrt(diffusion_coeff * simulation_time_step * 6 / 1e4)
+        # ) * sqrt(diffusion_coeff * simulation_time_step * 6 / 1e4)
+      ) * sqrt(diffusion_coeff * sim_param[["step"]] * 6 / 1e4)
 
   ## turn particle information into a spatvector object:
   part_coords <- 
@@ -417,7 +472,8 @@ for (i in 1:length(simulation_time)) {
   previous_position     <- part_coords
 
   ## for each n-th simulation step store the results (where n = simulation_out_step):
-  if ((i - 1) %% simulation_out_step == 0) {
+  # if ((i - 1) %% simulation_out_step == 0) {
+  if ((i - 1) %% sim_param[["plt_step"]] == 0) {
     
     # add an indicator of the release state of the particles:
     part_coords$released <- rep(FALSE, release_n)
@@ -546,3 +602,50 @@ for (i in 1:length(simulation_time)) {
 ## save the resulting particle information:
 # save(part_results, file = "output/out.RData", compress = TRUE)
 ```
+# Convert Figures into Video using `ffmpeg`
+
+```{r}
+system2(
+  here(ffmpeg_path), 
+  paste(
+    "-framerate 10 -i",
+    here(plot_out_path, "out%03d.png"), 
+    "-c:v libx264 -pix_fmt yuv420p", 
+    here(dirname(plot_out_path), "output.mp4")
+    )
+)
+
+
+
+```
+
+
+```{r}
+test <- data.frame()
+
+for (li in part_results) {
+  # print(crds(li))
+  
+  temp <- crds(li, TRUE) %>% 
+    mutate(
+      .before = 1,
+      id = as.character(row_number())
+    )
+  test <- rbind(test, temp)
+  
+}
+print(test)
+
+base_plt +
+# ggplot() +
+  geom_path(data = test, aes(x = x, y = y, color = id)) +
+  geom_point(data = test, aes(x = x, y = y, color = id)) +
+  scale_color_discrete() +
+   coord_sf(
+        xlim = plot.xlim,
+        ylim = plot.ylim
+        )  +
+  theme_bw()
+# crds(part_results[[64]])
+```
+
