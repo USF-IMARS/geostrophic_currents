@@ -224,13 +224,20 @@ aviso_download(
 shelf(terra)
 
 ## function that reads netcdf files and puts them in a workable stack object:
-read_mover <- function(ncdfile, xvar = "u", yvar = "v") {
+read_mover <- function(ncdfile, xvar = "u", yvar = "v", hycom_time = FALSE) {
   
   u <- terra::rast(ncdfile, subds = xvar)
   v <- terra::rast(ncdfile, subds = yvar)
   
   z_time <- terra::time(u)
 
+  if (hycom_time) {
+    z_time <- lubridate::as_date(
+      as.numeric(str_extract(names(u), "MT=(.*)", 1)),
+      origin = as_date("1900-12-31")
+    )
+  }
+  
   return(list(u = u, v = v, z = z_time))
 }
 
