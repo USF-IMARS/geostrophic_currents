@@ -1,0 +1,63 @@
+---
+title: "hycom_particle_tracker"
+format: html
+---
+
+```{r}
+## function that reads netcdf files and puts them in a workable stack object:
+read_mover <- function(ncdfile, xvar = "u", yvar = "v", hycom_time = FALSE) {
+  
+  u <- terra::rast(ncdfile, subds = xvar)
+  v <- terra::rast(ncdfile, subds = yvar)
+  
+  z_time <- terra::time(u)
+
+  if (hycom_time) {
+    z_time <- lubridate::as_date(
+      as.numeric(str_extract(names(u), "MT=(.*)", 1)),
+      origin = as_date("1900-12-31")
+    )
+  }
+  
+  return(list(u = u, v = v, z = z_time))
+}
+
+  # hy_date <-
+    lubridate::as_date(
+      as.numeric(str_extract(names(water_u)[1], "MT=(.*)", 1)),
+      origin = as_date("1900-12-31")
+    )
+
+test <- 
+hycom_path %>% 
+  tibble(file = .) %>% 
+  mutate(
+    date = str_extract(file, "\\d{4}_\\d{2}_\\d{2}"),
+    date = as_date(date)
+  ) %T>%
+  print()
+
+temp <- 
+  test %>% 
+  filter(between(date, as_date("2024-01-01"), as_date("2024-02-01"))) %>% 
+  slice(15:16) %>% 
+  pull(file) %>% 
+  read_mover(xvar = "u", yvar = "v", hycom_time = TRUE)
+
+
+water_u    <- temp$u
+water_u2    <- temp2$u
+water_v    <- temp$v
+water_v2    <- temp2$v
+water_time <- temp$z
+water_time2 <- temp2$z
+
+comb_rast <- c(water_u, water_u2)
+
+time(comb_rast) <- c(water_time, water_time2)
+time(comb_rast)
+
+plot(water_u)
+plot(water_v)
+
+```
