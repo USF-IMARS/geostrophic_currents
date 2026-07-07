@@ -619,8 +619,11 @@ hycom_path <- here("data", "raw", "hycom") %>%
   print()
 
 # cloud storage
-hycom_path <- here(cloud_dir, "data", "raw", "hycom") %>%
-  dir_ls() %T>% {
+hycom_path <- 
+  here(cloud_dir, "data", "raw", "hycom") %>%
+  dir_ls() %>%
+  dir_ls() %>% 
+  dir_ls(regexp = "\\.nc") %T>% {
     print(length(.))
     sample(., 10) %>% print()
   }
@@ -667,6 +670,7 @@ cruise_id <-
 # }
 
 ```
+
 
 
 ## Load Coast
@@ -895,7 +899,8 @@ hycom_path_t <-
   mutate(
     date = str_extract(file, "\\d{4}_\\d{2}_\\d{2}"),
     date = as_date(date)
-  )
+  ) %T>%
+  print()
 
 for (i in cruise_id) {
   
