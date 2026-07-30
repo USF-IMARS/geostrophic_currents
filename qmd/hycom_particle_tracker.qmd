@@ -193,6 +193,11 @@ gd_load <- lapply(
   }
 )
 
+land_crop <- crop(gd_load[[1]], ext(water_u))
+land_mask <- rasterize(land_crop, rast(ext(water_u), resolution = res(water_u)), field = 1) 
+land_mask[is.na(land_mask)] <- 0
+
+
 base_plt <- ggplot()
    
 for (i in seq(length(gd_load))) {
@@ -351,7 +356,8 @@ n_particles[simulation_time <= rel_params[["start"]]] <- 0
 n_particles[simulation_time >= rel_params[["end"]]]   <- rel_params[["num"]]
 
 n_particles[is.na(n_particles)]               <- approx(
-  c(0, release_n), 
+  # c(0, release_n), 
+  c(0, rel_params$num), 
   n = 2 + sum(is.na(n_particles))
   )$y[c(-1, -(2 + sum(is.na(n_particles))))]
 
@@ -363,9 +369,12 @@ particles <-
     # pos_x = rep(release_x, release_n),
     # pos_y = rep(release_y, release_n),
     # pos_z = rep(release_z, release_n)
-    pos_x = rep(rel_coords[1], release_n),
-    pos_y = rep(rel_coords[2], release_n),
-    pos_z = rep(rel_coords[3], release_n)
+    # pos_x = rep(rel_coords[1], release_n),
+    # pos_y = rep(rel_coords[2], release_n),
+    # pos_z = rep(rel_coords[3], release_n)
+    pos_x = rep(rel_params$coords[1],  rel_params$num),
+    pos_y = rep(rel_params$coords[2],  rel_params$num),
+    pos_z = rep(rel_params$coords[3],  rel_params$num)
   ) %>%
   terra::vect(
     geom = c("pos_x", "pos_y"),
@@ -469,71 +478,71 @@ for (i in seq(length(simulation_time))) {
     project(crs(previous_position))
 
   
-  ## turn particle information into a spatvector object:
-  part_spv <- 
-    as.data.frame(part_coords) %>%
-    vect(geom = c("x", "y"), crs = part_proj) %>%
-    project(crs(previous_position))
-  
-  ## ---- 3. Coastline blocking with slide-along ----
-# Previous positions in projected meter space
-prev_proj <- terra::project(previous_position, part_proj)
-prev_xy   <- terra::crds(prev_proj)
-
-# New candidate positions in the same projected space
-new_proj  <- terra::project(part_spv, part_proj)
-new_xy    <- terra::crds(new_proj)
-
-# Check land mask at new positions
-land_vals <- terra::extract(land_mask, new_proj, method = "simple", ID = FALSE)
-ok <- (land_vals == 0)  # 0 = water, 1 = land
-
-if (any(!ok)) {
-  # For particles that hit land, slide them back along the segment
-  idx <- which(!ok)
-  
-  for (j in idx) {
-    x0 <- prev_xy[j, 1]; y0 <- prev_xy[j, 2]  # old (water)
-    x1 <- new_xy[j, 1]; y1 <- new_xy[j, 2]    # new (land)
-    
-    # Binary search along the segment for the last water point
-    a <- 0; b <- 1
-    for (k in 1:10) {
-      t <- (a + b) / 2
-      xt <- x0 + t * (x1 - x0)
-      yt <- y0 + t * (y1 - y0)
-      
-      tmp_spv <- vect(
-        data.frame(x = xt, y = yt),
-        geom = c("x", "y"),
-        crs  = part_proj
-      ) %>%
-        project(crs(land_mask))
-      
-      val <- terra::extract(land_mask, tmp_spv, method = "simple", ID = FALSE)
-      if (is.na(val)) val <- 0  # treat NA as water if needed
-      
-      if (val == 0) {
-        a <- t  # still in water, go further
-      } else {
-        b <- t  # in land, go back
-      }
-    }
-    
-    # Use point just inside water
-    t_final <- a
-    new_xy[j, 1] <- x0 + t_final * (x1 - x0)
-    new_xy[j, 2] <- y0 + t_final * (y1 - y0)
-  }
-  
-  part_spv <- vect(
-    as.data.frame(new_xy),
-    geom = c("x", "y"),
-    crs  = part_proj
-  ) %>%
-    project(crs(previous_position))
-}
-  
+#   ## turn particle information into a spatvector object:
+#   part_spv <- 
+#     as.data.frame(part_coords) %>%
+#     vect(geom = c("x", "y"), crs = part_proj) %>%
+#     project(crs(previous_position))
+#   
+#   ## ---- 3. Coastline blocking with slide-along ----
+# # Previous positions in projected meter space
+# prev_proj <- terra::project(previous_position, part_proj)
+# prev_xy   <- terra::crds(prev_proj)
+# 
+# # New candidate positions in the same projected space
+# new_proj  <- terra::project(part_spv, part_proj)
+# new_xy    <- terra::crds(new_proj)
+# 
+# # Check land mask at new positions
+# land_vals <- terra::extract(land_mask, new_proj, method = "simple", ID = FALSE)
+# ok <- (land_vals == 0)  # 0 = water, 1 = land
+# 
+# if (any(!ok)) {
+#   # For particles that hit land, slide them back along the segment
+#   idx <- which(!ok)
+#   
+#   for (j in idx) {
+#     x0 <- prev_xy[j, 1]; y0 <- prev_xy[j, 2]  # old (water)
+#     x1 <- new_xy[j, 1]; y1 <- new_xy[j, 2]    # new (land)
+#     
+#     # Binary search along the segment for the last water point
+#     a <- 0; b <- 1
+#     for (k in 1:10) {
+#       t <- (a + b) / 2
+#       xt <- x0 + t * (x1 - x0)
+#       yt <- y0 + t * (y1 - y0)
+#       
+#       tmp_spv <- vect(
+#         data.frame(x = xt, y = yt),
+#         geom = c("x", "y"),
+#         crs  = part_proj
+#       ) %>%
+#         project(crs(land_mask))
+#       
+#       val <- terra::extract(land_mask, tmp_spv, method = "simple", ID = FALSE)
+#       if (is.na(val)) val <- 0  # treat NA as water if needed
+#       
+#       if (val == 0) {
+#         a <- t  # still in water, go further
+#       } else {
+#         b <- t  # in land, go back
+#       }
+#     }
+#     
+#     # Use point just inside water
+#     t_final <- a
+#     new_xy[j, 1] <- x0 + t_final * (x1 - x0)
+#     new_xy[j, 2] <- y0 + t_final * (y1 - y0)
+#   }
+#   
+#   part_spv <- vect(
+#     as.data.frame(new_xy),
+#     geom = c("x", "y"),
+#     crs  = part_proj
+#   ) %>%
+#     project(crs(previous_position))
+# }
+#   
   
   
   
@@ -545,7 +554,8 @@ if (any(!ok)) {
   if ((i - 1) %% sim_param[["plt_step"]] == 0) {
     
     # add an indicator of the release state of the particles:
-    part_coords$released <- rep(FALSE, release_n)
+    # part_coords$released <- rep(FALSE, release_n)
+    part_coords$released <- rep(FALSE, rel_params$num)
     
     part_coords$released[0:n_particles[i]] <- TRUE
     
