@@ -468,6 +468,75 @@ for (i in seq(length(simulation_time))) {
     ) %>%
     project(crs(previous_position))
 
+  
+  ## turn particle information into a spatvector object:
+  part_spv <- 
+    as.data.frame(part_coords) %>%
+    vect(geom = c("x", "y"), crs = part_proj) %>%
+    project(crs(previous_position))
+  
+  ## ---- 3. Coastline blocking with slide-along ----
+# Previous positions in projected meter space
+prev_proj <- terra::project(previous_position, part_proj)
+prev_xy   <- terra::crds(prev_proj)
+
+# New candidate positions in the same projected space
+new_proj  <- terra::project(part_spv, part_proj)
+new_xy    <- terra::crds(new_proj)
+
+# Check land mask at new positions
+land_vals <- terra::extract(land_mask, new_proj, method = "simple", ID = FALSE)
+ok <- (land_vals == 0)  # 0 = water, 1 = land
+
+if (any(!ok)) {
+  # For particles that hit land, slide them back along the segment
+  idx <- which(!ok)
+  
+  for (j in idx) {
+    x0 <- prev_xy[j, 1]; y0 <- prev_xy[j, 2]  # old (water)
+    x1 <- new_xy[j, 1]; y1 <- new_xy[j, 2]    # new (land)
+    
+    # Binary search along the segment for the last water point
+    a <- 0; b <- 1
+    for (k in 1:10) {
+      t <- (a + b) / 2
+      xt <- x0 + t * (x1 - x0)
+      yt <- y0 + t * (y1 - y0)
+      
+      tmp_spv <- vect(
+        data.frame(x = xt, y = yt),
+        geom = c("x", "y"),
+        crs  = part_proj
+      ) %>%
+        project(crs(land_mask))
+      
+      val <- terra::extract(land_mask, tmp_spv, method = "simple", ID = FALSE)
+      if (is.na(val)) val <- 0  # treat NA as water if needed
+      
+      if (val == 0) {
+        a <- t  # still in water, go further
+      } else {
+        b <- t  # in land, go back
+      }
+    }
+    
+    # Use point just inside water
+    t_final <- a
+    new_xy[j, 1] <- x0 + t_final * (x1 - x0)
+    new_xy[j, 2] <- y0 + t_final * (y1 - y0)
+  }
+  
+  part_spv <- vect(
+    as.data.frame(new_xy),
+    geom = c("x", "y"),
+    crs  = part_proj
+  ) %>%
+    project(crs(previous_position))
+}
+  
+  
+  
+  
   ## store the new locations in the results list:
   previous_position     <- part_coords
 
