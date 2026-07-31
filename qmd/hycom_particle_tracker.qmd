@@ -143,7 +143,9 @@ aviso_download(
   overwrite
 )
 ```
+# 3.0 Particle Tracker
 
+## STEP 1: Set Up Functions
 
 ```{r}
 ## function that reads netcdf files and puts them in a workable stack object:
@@ -193,16 +195,6 @@ gd_load <- lapply(
   }
 )
 
-land_crop <- crop(gd_load[[1]], ext(water_u))
-land_mask <- rasterize(land_crop, rast(ext(water_u), resolution = res(water_u)), field = 1) 
-land_mask[is.na(land_mask)] <- 0
-
-
-base_plt <- ggplot()
-   
-for (i in seq(length(gd_load))) {
-  base_plt <- base_plt + geom_spatvector(data = gd_load[[i]]) 
-}
 
 # function that extrapolates water currents for NA values
 extend_data <- function(r, band = 21) {
@@ -219,6 +211,7 @@ extend_data <- function(r, band = 21) {
 }
 ```
 
+## STEP 2: Load Currents and Wind Data
 
 ```{r}
 temp <- 
@@ -244,6 +237,33 @@ wind_time  <- temp$z
 rm(temp)
 ```
 
+## STEP 3: Crop and Create Land Mask
+
+```{r}
+land_crop <- crop(gd_load[[1]], ext(water_u)) 
+
+base_plt <- ggplot()
+   
+for (i in seq(length(gd_load))) {
+  # base_plt <- base_plt + geom_spatvector(data = gd_load[[i]]) 
+  base_plt <- base_plt + geom_spatvector(data = land_crop) 
+}
+base_plt
+
+# buffer around polygon
+land_buff <- buffer(land_crop, 1000)
+plot(land_buff)
+
+# create raster with the same resoltion as currents data
+land_mask <- rasterize(
+  land_buff, 
+  rast(ext(water_u), resolution = res(water_u)), 
+  field = 1
+  ) 
+land_mask[is.na(land_mask)] <- 0
+
+plot(land_mask)
+```
 
 ```{r plot-vectors}
 plot(water_u)
@@ -252,7 +272,7 @@ plot(wind_u)
 plot(wind_v)
 ```
 
-## STEP 2: specify particle release details
+## STEP 4: Specify Particle Release Details
 
 
 ```{r}
@@ -261,14 +281,28 @@ rel_params <- list(
   # "end"    = as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC"),
   "start"  = as.POSIXct(as_datetime(months[1]), tz = "UTC"),
   "end"    = as.POSIXct(as_datetime(months[1]) + days(1), tz = "UTC"),
-  "num"    = 10,
-  "coords" = c(
-    -83, # lon
-    24,  # lat
+  "num"    = 100, # number of particles to release
+  # "coords" = c(
+  #   -83, # lon
+  #   24,  # lat
+  #   0    # depth not used in simulation
+  #   )
+  "coords" = c( # location of particle start
+    -81.25, # lon
+    25.5,  # lat
     0    # depth not used in simulation
     )
   ) %T>% 
   print()
+
+# plot start location
+base_plt +
+  annotate(
+    geom = "point",
+    # data = rel_params$coords, 
+    x = rel_params$coords[1], y = rel_params$coords[2],
+    color = "red", size = rel(2)
+  )
 
 # # time at which the simulated release should start:
 # release_start         <- as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC")
@@ -300,7 +334,7 @@ rel_params <- list(
 # release_z             <- 0
 ```
 
-## STEP 3: specify simulation details
+## STEP 5: Specify Simulation Details
 
 ```{r}
 # time at which the simulation should start and end:
@@ -316,6 +350,7 @@ sim_param <- list(
 ) %T>% 
   print()
 
+# when simulation occurs
 simulation_time <- seq(
   sim_param[["start"]], 
   sim_param[["end"]] - sim_param[["step"]], 
@@ -346,6 +381,7 @@ simulation_time <- seq(
 #   print()
 ```
 
+## STEP 6: Set How Many Paricles and Where
 
 ```{r}
 # for each time step determine how many particles are released:
@@ -382,14 +418,18 @@ particles <-
   )
 
 # projection to be used to calculate particle displacement in meters:
-part_proj             <- terra::crs("EPSG:32631")
+# part_proj <- terra::crs("EPSG:32631") # Europe
+part_proj <- terra::crs("EPSG:6442") # West Florida
 
 # drift factor indicates with which fraction particles are displaced by the wind speed:
 drift_factor    <- 0.03
+# drift_factor    <- 0.5
 
 # the diffusion coefficient, used in random walk simulation
 diffusion_coeff <- 1e5
 ```
+
+## STEP 7: Run Particle Releae Simulation
 
 TODO: add coastline boundary
 TODO: add in if NA extract then replace with previous value
@@ -405,6 +445,7 @@ out_list <- 1
 ## start looping the simulation times
 for (i in seq(length(simulation_time))) {
   message(paste(i, "of", length(simulation_time)))
+  flush.console()
   ## Get the water currents that are closest to the current simulation time
   tdif   <- abs(water_time - simulation_time[i])
   tsel_c <- which(tdif == min(tdif))[[1]]
@@ -425,7 +466,7 @@ for (i in seq(length(simulation_time))) {
     terra::crds()
 
   
-  ## displace particles with *water_currents*
+  ## displace particles with *water currents*
   part_coords[seq(0, n_particles[i]), ] <- 
     part_coords[seq(0, n_particles[i]), ] +
     # simulation_time_step * # integrate m/s to m i.e m/s * seconds
@@ -438,9 +479,11 @@ for (i in seq(length(simulation_time))) {
       )[seq(0, n_particles[i]), ]
   
   if (any(is.nan(part_coords))) {
+    message("Hit here!!")
     bad_rows <- unique(which(arr.ind = TRUE, is.nan(part_coords))[, 1])
     part_coords[bad_rows, ] <- prev_coords[bad_rows,]
     prev_coords <- part_coords
+    stop()
   }
   
   ## displace particles with *wind*
@@ -469,97 +512,109 @@ for (i in seq(length(simulation_time))) {
       ) * sqrt(diffusion_coeff * sim_param[["step"]] * 6 / 1e4)
 
   ## turn particle information into a spatvector object:
-  part_coords <- 
+  # part_coords <- 
+  #   as.data.frame(part_coords) %>%
+  #   vect(
+  #     geom = c("x", "y"),
+  #     crs  = part_proj
+  #   ) %>%
+  #   project(crs(previous_position))
+
+  
+  
+  
+  ## turn particle information into a spatvector object:
+  part_spv <-
     as.data.frame(part_coords) %>%
-    vect(
+    vect(geom = c("x", "y"), crs = part_proj) %>%
+    project(crs(previous_position))
+
+  ## Coastline blocking with slide-along
+  # Previous positions in projected meter space
+  prev_proj <- terra::project(previous_position, part_proj)
+  prev_xy   <- terra::crds(prev_proj)
+  
+  # New candidate positions in the same projected space
+  new_proj  <- terra::project(part_spv, part_proj)
+  new_xy    <- terra::crds(new_proj)
+  
+  # Check land mask at new positions
+  land_vals <- terra::extract(
+    land_mask, 
+    new_proj, 
+    method = "simple", 
+    ID = FALSE
+    )
+  ok <- (land_vals == 0)  # 0 = water, 1 = land
+  
+  if (any(!ok)) {
+    # For particles that hit land, slide them back along the segment
+    idx <- which(!ok)
+  
+    for (j in idx) {
+      x0 <- prev_xy[j, 1]; y0 <- prev_xy[j, 2]  # old (water)
+      x1 <- new_xy[j, 1]; y1 <- new_xy[j, 2]    # new (land)
+  
+      # Binary search along the segment for the last water point
+      a <- 0; b <- 1
+      for (k in 1:10) {
+        t <- (a + b) / 2
+        xt <- x0 + t * (x1 - x0)
+        yt <- y0 + t * (y1 - y0)
+  
+        tmp_spv <- vect(
+          data.frame(x = xt, y = yt),
+          geom = c("x", "y"),
+          crs  = part_proj
+        ) %>%
+          project(crs(land_mask))
+  
+        val <- terra::extract(land_mask, tmp_spv, method = "simple", ID = FALSE)
+        if (is.na(val)) val <- 0  # treat NA as water if needed
+  
+        if (val == 0) {
+          a <- t  # still in water, go further
+        } else {
+          b <- t  # in land, go back
+        }
+      }
+  
+      # Use point just inside water
+      t_final <- a
+      new_xy[j, 1] <- x0 + t_final * (x1 - x0)
+      new_xy[j, 2] <- y0 + t_final * (y1 - y0)
+    }
+  
+    part_spv <- vect(
+      as.data.frame(new_xy),
       geom = c("x", "y"),
       crs  = part_proj
     ) %>%
-    project(crs(previous_position))
+      project(crs(previous_position))
+  }
 
   
-#   ## turn particle information into a spatvector object:
-#   part_spv <- 
-#     as.data.frame(part_coords) %>%
-#     vect(geom = c("x", "y"), crs = part_proj) %>%
-#     project(crs(previous_position))
-#   
-#   ## ---- 3. Coastline blocking with slide-along ----
-# # Previous positions in projected meter space
-# prev_proj <- terra::project(previous_position, part_proj)
-# prev_xy   <- terra::crds(prev_proj)
-# 
-# # New candidate positions in the same projected space
-# new_proj  <- terra::project(part_spv, part_proj)
-# new_xy    <- terra::crds(new_proj)
-# 
-# # Check land mask at new positions
-# land_vals <- terra::extract(land_mask, new_proj, method = "simple", ID = FALSE)
-# ok <- (land_vals == 0)  # 0 = water, 1 = land
-# 
-# if (any(!ok)) {
-#   # For particles that hit land, slide them back along the segment
-#   idx <- which(!ok)
-#   
-#   for (j in idx) {
-#     x0 <- prev_xy[j, 1]; y0 <- prev_xy[j, 2]  # old (water)
-#     x1 <- new_xy[j, 1]; y1 <- new_xy[j, 2]    # new (land)
-#     
-#     # Binary search along the segment for the last water point
-#     a <- 0; b <- 1
-#     for (k in 1:10) {
-#       t <- (a + b) / 2
-#       xt <- x0 + t * (x1 - x0)
-#       yt <- y0 + t * (y1 - y0)
-#       
-#       tmp_spv <- vect(
-#         data.frame(x = xt, y = yt),
-#         geom = c("x", "y"),
-#         crs  = part_proj
-#       ) %>%
-#         project(crs(land_mask))
-#       
-#       val <- terra::extract(land_mask, tmp_spv, method = "simple", ID = FALSE)
-#       if (is.na(val)) val <- 0  # treat NA as water if needed
-#       
-#       if (val == 0) {
-#         a <- t  # still in water, go further
-#       } else {
-#         b <- t  # in land, go back
-#       }
-#     }
-#     
-#     # Use point just inside water
-#     t_final <- a
-#     new_xy[j, 1] <- x0 + t_final * (x1 - x0)
-#     new_xy[j, 2] <- y0 + t_final * (y1 - y0)
-#   }
-#   
-#   part_spv <- vect(
-#     as.data.frame(new_xy),
-#     geom = c("x", "y"),
-#     crs  = part_proj
-#   ) %>%
-#     project(crs(previous_position))
-# }
-#   
   
   
-  
-  ## store the new locations in the results list:
-  previous_position     <- part_coords
+  # store the new locations in the results list:
+  # previous_position <- part_coords
+  previous_position <- part_spv
 
-  ## for each n-th simulation step store the results (where n = simulation_out_step):
+  # for each n-th simulation step store the results 
+  #  (where n = simulation_out_step):
   # if ((i - 1) %% simulation_out_step == 0) {
   if ((i - 1) %% sim_param[["plt_step"]] == 0) {
     
     # add an indicator of the release state of the particles:
     # part_coords$released <- rep(FALSE, release_n)
-    part_coords$released <- rep(FALSE, rel_params$num)
+    # part_coords$released <- rep(FALSE, rel_params$num)
+    part_spv$released <- rep(FALSE, rel_params$num)
     
-    part_coords$released[0:n_particles[i]] <- TRUE
+    # part_coords$released[0:n_particles[i]] <- TRUE
+    part_spv$released[0:n_particles[i]] <- TRUE
     
-    part_results[[out_list]] <- part_coords
+    # part_results[[out_list]] <- part_coords
+    part_results[[out_list]] <- part_spv
     names(part_results)[out_list] <- paste(
       format(simulation_time[i], "%Y-%m-%d %H:%M:%S"),
       attr(as.POSIXlt(simulation_time[i]),"tzone")
@@ -681,20 +736,150 @@ for (i in seq(length(simulation_time))) {
 ## save the resulting particle information:
 # save(part_results, file = "output/out.RData", compress = TRUE)
 ```
-# Convert Figures into Video using `ffmpeg`
+## STEP 8: Convert Figures into Video using `ffmpeg`
 
 ```{r}
 system2(
-  here(ffmpeg_path), 
+  here(ffmpeg_path),
   paste(
-    "-framerate 10 -i",
-    here(plot_out_path, "out%03d.png"), 
-    "-c:v libx264 -pix_fmt yuv420p", 
-    here(dirname(plot_out_path), "output.mp4")
+    "-framerate 5 -i",
+    here(plot_out_path, "out%03d.png"),
+    "-c:v libx264 -pix_fmt yuv420p",
+    here(dirname(plot_out_path), paste0(
+      "particle_n_", rel_params$num, "_", format(Sys.Date(), "%Y_%m_%d"), ".mp4"
+      )
     )
+  )
 )
 
 
+
+```
+```{r}
+(base_plt +
+  # water  
+      metR::geom_arrow(
+        data    = wat_arrow,
+        mapping = aes(x = x, dx = u*5, y = y, dy = v*5, color = mag),
+        skip = 0,
+        size    = 2,                              # adjust arrow thickness
+        na.rm   = TRUE
+        ) +
+      scale_color_cross_blended_c(
+        name   = "Current", 
+        breaks = seq(0, 0.5, 0.1),
+        limits = c(0, 0.5),
+        oob    = scales::oob_squish,
+        ) + 
+  #  geom_point(
+  #    data = full_join(
+  #     terra::extract(twat_u, previous_position, method = "bilinear", ID = FALSE, xy = T),
+  #     terra::extract(twat_v, previous_position, method = "bilinear", ID = FALSE, xy = T),
+  #     by = c("x" = "x", "y" = "y")
+  #     ) %>% 
+  # distinct(x, y),
+  # aes(x = x, y = y), color = "red" 
+  #  ) +
+    geom_spatvector(
+     data = 
+       (part_coords[seq(0, n_particles[i]), ] +
+          sim_param[["step"]] *
+          cbind(
+            "x" = terra::extract(twat_u, previous_position, method = "bilinear", ID = FALSE)[, 1],
+            "y" = terra::extract(twat_v, previous_position, method = "bilinear", ID = FALSE)[, 1]
+            )[seq(0, n_particles[i]), ]
+        ) %>% 
+            as_tibble() %>%
+        vect(geom = c("x", "y"), crs = part_proj) %>%
+        project(crs(previous_position)),
+    # aes(x = x, y = y), 
+    color = "red"
+    ) +
+    
+   # geom_spatvector(data = previous_position, color = "green") +
+    
+   geom_spatvector(
+    data =
+       as_tibble(part_coords[seq(0, n_particles[i]), ]) %>%
+        vect(geom = c("x", "y"), crs = part_proj) %>%
+        project(crs(previous_position)),
+
+    color = "blue") +
+   
+   coord_sf(xlim = c(-81.22, -81.14), ylim = c(25.4, 25.48), expand = FALSE)
+ ) 
+
+cbind(
+      "x" = terra::extract(twat_u, previous_position, method = "bilinear", ID = FALSE, xy = T)[, 1],
+      "y" = terra::extract(twat_v, previous_position, method = "bilinear", ID = FALSE, xy = T)[, 1]
+      ) %>% 
+  as_tibble()
+
+full_join(
+      terra::extract(twat_u, previous_position, method = "bilinear", ID = FALSE, xy = T),
+      terra::extract(twat_v, previous_position, method = "bilinear", ID = FALSE, xy = T),
+      by = c("x" = "x", "y" = "y")
+      ) %>% 
+  distinct(x, y)
+```
+
+
+```{r}
+ggplot() +
+  geom_point(
+  # geom_spatvector(
+    data = (
+      part_coords[seq(0, n_particles[i]), ] +
+        sim_param[["step"]] *
+        cbind(
+          "x" = terra::extract(twat_u, previous_position, method = "bilinear", ID = FALSE)[, 1],
+          "y" = terra::extract(twat_v, previous_position, method = "bilinear", ID = FALSE)[, 1]
+        )[seq(0, n_particles[i]), ]
+    ) %>%
+      as_tibble() ,
+    aes(x = x, y = y),
+    color = "red"
+  ) +
+  geom_point(
+    # geom_spatvector(
+    data = as_tibble(part_coords[seq(0, n_particles[i]), ]),
+             aes(x = x, y = y),
+             color = "green"
+    )
+```
+
+
+```{r}
+ggplot() +
+  # base_plt +
+  # geom_point(
+  geom_spatvector(
+    data = (
+      part_coords[seq(0, n_particles[i]), ] +
+        sim_param[["step"]] *
+        cbind(
+          "x" = terra::extract(twat_u, previous_position, method = "bilinear", ID = FALSE)[, 1],
+          "y" = terra::extract(twat_v, previous_position, method = "bilinear", ID = FALSE)[, 1]
+        )[seq(0, n_particles[i]), ]
+    ) %>%
+      as_tibble()  %>%
+        vect(geom = c("x", "y"), crs = part_proj) %>%
+        project(crs(previous_position)),
+    # aes(x = x, y = y),
+    color = "red"
+  ) +
+  # geom_point(
+    geom_spatvector(
+    data = as_tibble(part_coords[seq(0, n_particles[i]), ])  %>%
+        vect(geom = c("x", "y"), crs = part_proj) %>%
+        project(crs(previous_position)),
+             # aes(x = x, y = y),
+             color = "green")  +
+   
+   # coord_sf(xlim = c(-81.22, -81.14), ylim = c(25.4, 25.48), expand = FALSE,
+            # crs = part_proj
+            # )
+theme()
 
 ```
 
