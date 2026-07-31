@@ -566,6 +566,13 @@ for (i in seq(length(simulation_time))) {
     )
   ok <- (land_vals == 0)  # 0 = water, 1 = land
   
+  # 1 = land, 0 = water, NA = outside domain
+  is_land   <- !is.na(land_vals) & (land_vals == 1)
+  in_domain <- !is.na(land_vals)
+  
+  ok <- !is_land & in_domain  # keep only if water AND inside domain
+  beached_or_out <- !ok       # mark for removal / beaching
+  
   if (any(!ok)) {
     # For particles that hit land, slide them back along the segment
     idx <- which(!ok)
