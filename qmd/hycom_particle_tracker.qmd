@@ -296,16 +296,21 @@ rel_params <- list(
   # "end"    = as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC"),
   "start"  = as.POSIXct(as_datetime(months[1]), tz = "UTC"),
   "end"    = as.POSIXct(as_datetime(months[1]) + days(1), tz = "UTC"),
-  "num"    = 100, # number of particles to release
+  "num"    = 10, # number of particles to release
   # "coords" = c(
   #   -83, # lon
   #   24,  # lat
   #   0    # depth not used in simulation
   #   )
-  "coords" = c( # location of particle start
-    -81.25, # lon
-    25.5,  # lat
-    0    # depth not used in simulation
+  # "coords" = c( # location of particle start
+  #   -81.25, # lon
+  #   25.5,  # lat
+  #   0    # depth not used in simulation
+  #   )
+  "coords" = list( # location of particle start
+    "lon"   = c(-81.25, -82.6, -83), # lon
+    "lat"   = c(25.5, 24.2, 26),  # lat
+    "depth" = c(0, 0, 0)    # depth not used in simulation
     )
   ) %T>% 
   print()
@@ -361,7 +366,7 @@ sim_param <- list(
   "step"     = 60 * 60 * 6, # seconds per step 6 hr
   # "step"     = 60 * 60 * 3, # seconds per step 3 hr
   # "step"     = 60 * 60, # seconds per step 1 hr
-  "plt_step" = 2 # plot every n-th time
+  "plt_step" = 3 # plot every n-th time
 ) %T>% 
   print()
 
@@ -462,7 +467,7 @@ out_list <- 1
 
 ## start looping the simulation times
 for (i in seq(length(simulation_time))) {
-# for (i in 1:10) {
+# for (i in 100:120) {
   message(paste(i, "of", length(simulation_time)))
   print(paste(i, "of", length(simulation_time)))
   flush.console()
@@ -575,7 +580,9 @@ for (i in seq(length(simulation_time))) {
   
   if (any(!ok)) {
     # For particles that hit land, slide them back along the segment
-    idx <- which(!ok)
+    idx <- which(!ok & in_domain)
+    
+    if (length(idx) != 0) {
   
     for (j in idx) {
       x0 <- prev_xy[j, 1]; y0 <- prev_xy[j, 2]  # old (water)
@@ -617,6 +624,7 @@ for (i in seq(length(simulation_time))) {
       crs  = part_proj
     ) %>%
       project(crs(previous_position))
+    }
   }
 
   
@@ -748,7 +756,8 @@ for (i in seq(length(simulation_time))) {
    
       coord_sf(
         xlim = plot.xlim,
-        ylim = plot.ylim
+        ylim = plot.ylim,
+        expand = FALSE
         ) +
       theme_bw()
     )
@@ -768,11 +777,11 @@ for (i in seq(length(simulation_time))) {
 system2(
   here(ffmpeg_path),
   paste(
-    "-framerate 5 -i",
+    "-framerate 1 -i",
     here(plot_out_path, "out%03d.png"),
     "-c:v libx264 -pix_fmt yuv420p",
     here(dirname(plot_out_path), paste0(
-      "particle_n_", rel_params$num, "_", format(Sys.Date(), "%Y_%m_%d"), ".mp4"
+      "particle3_n_", rel_params$num, "_", format(Sys.Date(), "%Y_%m_%d"), ".mp4"
       )
     )
   )
