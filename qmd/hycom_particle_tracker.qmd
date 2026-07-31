@@ -76,8 +76,10 @@ hycom_filt_path <-
   filter(
     between(
       date, 
-      as_date("2017-10-11") - days(10), 
-      as_date("2017-10-12") + days(5)
+      # as_date("2017-10-11") - days(10), 
+      # as_date("2017-10-12") + days(5)
+      as_date("2017-10-01"), 
+      as_date("2017-10-31")
       )
   ) %T>%
   print()
@@ -110,6 +112,19 @@ months <-
 #     )
 
 ```
+
+URL: <https://data.marine.copernicus.eu/product/WIND_GLO_PHY_L4_MY_012_006/description>
+Dataset:         Global Ocean Hourly Reprocessed Sea Surface Wind and Stress
+                   from Scatterometer and Model
+ID:              cmems_obs-wind_glo_phy_my_l4_0.125deg_PT1H
+Resolution:      0.125° × 0.125°
+Temporal Extent: 1 Jun 1994 to 18 Feb 2026
+Temporal:        Hourly
+
+Variables: 
+  Wind
+  - eastward_wind - Eastward wind [m/s]
+  - northward_wind - Northward wind [m/s]
 
 ```{r wind-vel-params}
 # set to TRUE if downloading data
@@ -300,7 +315,7 @@ base_plt +
   annotate(
     geom = "point",
     # data = rel_params$coords, 
-    x = rel_params$coords[1], y = rel_params$coords[2],
+    x = rel_params$coords$lon, y = rel_params$coords$lat,
     color = "red", size = rel(2)
   )
 
@@ -343,8 +358,8 @@ sim_param <- list(
   "end"      = as.POSIXct(as_datetime(months[2]), tz = "UTC"), # end
   # "end"      = as.POSIXct(as_datetime(months[1]) + days(2), tz = "UTC"), # end
   # "step"     = 60 * 60 / 4, # seconds per step 0.25 hr
-  # "step"     = 60 * 60 * 6, # seconds per step 6 hr
-  "step"     = 60 * 60 * 3, # seconds per step 3 hr
+  "step"     = 60 * 60 * 6, # seconds per step 6 hr
+  # "step"     = 60 * 60 * 3, # seconds per step 3 hr
   # "step"     = 60 * 60, # seconds per step 1 hr
   "plt_step" = 2 # plot every n-th time
 ) %T>% 
@@ -389,7 +404,7 @@ n_particles           <- rep(NA, length(simulation_time))
 # n_particles[simulation_time <= release_start] <- 0
 # n_particles[simulation_time >= release_end]   <- release_n
 n_particles[simulation_time <= rel_params[["start"]]] <- 0
-n_particles[simulation_time >= rel_params[["end"]]]   <- rel_params[["num"]]
+n_particles[simulation_time >= rel_params[["end"]]]   <- rel_params[["num"]]  * length(rel_params$coords$lon)
 
 n_particles[is.na(n_particles)]               <- approx(
   # c(0, release_n), 
@@ -408,9 +423,12 @@ particles <-
     # pos_x = rep(rel_coords[1], release_n),
     # pos_y = rep(rel_coords[2], release_n),
     # pos_z = rep(rel_coords[3], release_n)
-    pos_x = rep(rel_params$coords[1],  rel_params$num),
-    pos_y = rep(rel_params$coords[2],  rel_params$num),
-    pos_z = rep(rel_params$coords[3],  rel_params$num)
+    # pos_x = rep(rel_params$coords[1],  rel_params$num),
+    # pos_y = rep(rel_params$coords[2],  rel_params$num),
+    # pos_z = rep(rel_params$coords[3],  rel_params$num)
+    pos_x = rep(rel_params$coords$lon,  rel_params$num),
+    pos_y = rep(rel_params$coords$lat,  rel_params$num),
+    pos_z = rep(rel_params$coords$depth,  rel_params$num)
   ) %>%
   terra::vect(
     geom = c("pos_x", "pos_y"),
@@ -444,7 +462,9 @@ out_list <- 1
 
 ## start looping the simulation times
 for (i in seq(length(simulation_time))) {
+# for (i in 1:10) {
   message(paste(i, "of", length(simulation_time)))
+  print(paste(i, "of", length(simulation_time)))
   flush.console()
   ## Get the water currents that are closest to the current simulation time
   tdif   <- abs(water_time - simulation_time[i])
@@ -479,11 +499,10 @@ for (i in seq(length(simulation_time))) {
       )[seq(0, n_particles[i]), ]
   
   if (any(is.nan(part_coords))) {
-    message("Hit here!!")
     bad_rows <- unique(which(arr.ind = TRUE, is.nan(part_coords))[, 1])
     part_coords[bad_rows, ] <- prev_coords[bad_rows,]
     prev_coords <- part_coords
-    stop()
+    # stop()
   }
   
   ## displace particles with *wind*
@@ -755,20 +774,22 @@ system2(
 
 
 ```
+
+
 ```{r}
 (base_plt +
   # water  
       metR::geom_arrow(
         data    = wat_arrow,
-        mapping = aes(x = x, dx = u*5, y = y, dy = v*5, color = mag),
-        skip = 0,
-        size    = 2,                              # adjust arrow thickness
+        mapping = aes(x = x, dx = u, y = y, dy = v, color = mag),
+        skip = 10,
+        size    = 0.5,                              # adjust arrow thickness
         na.rm   = TRUE
         ) +
       scale_color_cross_blended_c(
         name   = "Current", 
-        breaks = seq(0, 0.5, 0.1),
-        limits = c(0, 0.5),
+        breaks = seq(0, 3, 1),
+        limits = c(0, 3),
         oob    = scales::oob_squish,
         ) + 
   #  geom_point(
@@ -805,8 +826,20 @@ system2(
         project(crs(previous_position)),
 
     color = "blue") +
+ 
+     geom_spatvector(
+    data =
+       new_proj[is.na(land_vals)],
+
+    color = "green") +
    
-   coord_sf(xlim = c(-81.22, -81.14), ylim = c(25.4, 25.48), expand = FALSE)
+    geom_sf(
+    data = sf::st_as_sf(as.polygons(rast(ext(land_mask)))),
+    fill = NA
+  ) +
+   
+   # coord_sf(xlim = c(-81.22, -81.14), ylim = c(25.4, 25.48), expand = FALSE)
+   theme()
  ) 
 
 cbind(
@@ -821,6 +854,10 @@ full_join(
       by = c("x" = "x", "y" = "y")
       ) %>% 
   distinct(x, y)
+
+ggplot() +
+ 
+
 ```
 
 
@@ -850,8 +887,8 @@ ggplot() +
 
 
 ```{r}
-ggplot() +
-  # base_plt +
+# ggplot() +
+  base_plt +
   # geom_point(
   geom_spatvector(
     data = (
@@ -881,6 +918,42 @@ ggplot() +
             # )
 theme()
 
+```
+```{r}
+rel_params <- list(
+  # "start"  = as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC"),
+  # "end"    = as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC"),
+  "start"  = as.POSIXct(as_datetime(months[1]), tz = "UTC"),
+  "end"    = as.POSIXct(as_datetime(months[1]) + days(1), tz = "UTC"),
+  "num"    = 10, # number of particles to release
+  # "coords" = c(
+  #   -83, # lon
+  #   24,  # lat
+  #   0    # depth not used in simulation
+  #   )
+  "coords" = list( # location of particle start
+    "lon" = c(-81.25, -83), # lon
+    "lat" = c(25.5, 24),  # lat
+    "depth" = c(0, 0)    # depth not used in simulation
+    )
+  ) %T>% 
+  print()
+
+
+data.frame(
+    # pos_x = rep(release_x, release_n),
+    # pos_y = rep(release_y, release_n),
+    # pos_z = rep(release_z, release_n)
+    # pos_x = rep(rel_coords[1], release_n),
+    # pos_y = rep(rel_coords[2], release_n),
+    # pos_z = rep(rel_coords[3], release_n)
+    # pos_x = rep(rel_params$coords[1],  rel_params$num),
+    # pos_y = rep(rel_params$coords[2],  rel_params$num),
+    # pos_z = rep(rel_params$coords[3],  rel_params$num)
+    pos_x = rep(rel_params$coords$lon,  rel_params$num),
+    pos_y = rep(rel_params$coords$lat,  rel_params$num),
+    pos_z = rep(rel_params$coords$depth,  rel_params$num)
+  )
 ```
 
 
