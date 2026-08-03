@@ -223,6 +223,13 @@ wind_time  <- temp$z
 rm(temp)
 ```
 
+```{r plot-vectors}
+plot(water_u)
+plot(water_v)
+plot(wind_u)
+plot(wind_v)
+```
+
 ## STEP 3: Crop and Create Land Mask
 
 ```{r}
@@ -243,8 +250,6 @@ gd_load <- lapply(
   }
 )
 
-# land_crop <- crop(gd_load[[1]], ext(water_u)) 
-
 land_crop <- land_buff <- list()
 base_plt <- ggplot()
 
@@ -252,19 +257,20 @@ base_plt <- ggplot()
 for (i in seq(length(gd_load))) {
   land_crop[[i]] <- crop(gd_load[[i]], ext(water_u))
   
-  # base_plt <- base_plt + geom_spatvector(data = gd_load[[i]])
+  # add land to figure
   base_plt <- base_plt + geom_spatvector(data = land_crop[[i]])
   
   # buffer around polygon
-  land_buff[[i]] <- buffer(land_crop[[i]], 1000)
+  land_buff[[i]] <- buffer(land_crop[[i]], 1000) # meters
   
 }
 
 base_plt
 
+# combine all countries to one spatvector
 land_union <- purrr::reduce(land_buff, terra::union)
 
-# create raster with the same resoltion as currents data
+# create raster with the same resolution as currents data
 land_mask <- rasterize(
   land_union, 
   rast(ext(water_u), resolution = res(water_u)), 
@@ -275,12 +281,7 @@ land_mask[is.na(land_mask)] <- 0
 plot(land_mask)
 ```
 
-```{r plot-vectors}
-plot(water_u)
-plot(water_v)
-plot(wind_u)
-plot(wind_v)
-```
+
 
 ## STEP 4: Specify Particle Release Details
 
