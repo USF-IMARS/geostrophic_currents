@@ -182,35 +182,6 @@ read_mover <- function(ncdfile, xvar = "u", yvar = "v", hycom_time = FALSE) {
   return(list(u = u, v = v, z = z_time))
 }
 
-## Countries for which the shorelines are downloaded and plotted
-countries <- c("USA")
-
-gd_load <- lapply(
-  as.list(countries),
-  function(x) {
-    gadm <- ""
-    lev <- 0
-    if (x == "NLD") {
-      lev <- 1
-    } else {
-      lev <- 0
-    }
-
-    gadm <- tryCatch(
-      geodata::gadm(country = x, level = lev, path = tempdir()),
-      error = function(e) NULL
-    )
-
-    if (inherits(gadm, "SpatVector") && lev == 1 && !is.null(gadm)) {
-      gadm <- gadm[gadm$ENGTYPE_1 != "Water body", ]
-      gadm <- terra::aggregate(gadm, by = "GID_1")
-    }
-
-    gadm
-  }
-)
-
-
 # function that extrapolates water currents for NA values
 extend_data <- function(r, band = 21) {
   terra::focal(
@@ -255,23 +226,47 @@ rm(temp)
 ## STEP 3: Crop and Create Land Mask
 
 ```{r}
-land_crop <- crop(gd_load[[1]], ext(water_u)) 
+## Countries for which the shorelines are downloaded and plotted
+countries <- c("USA", "Cuba", "Bahamas")
 
+gd_load <- lapply(
+  as.list(countries),
+  function(x) {
+    gadm <- ""
+
+    gadm <- tryCatch(
+      geodata::gadm(country = x, level = 0, path = tempdir()),
+      error = function(e) NULL
+    )
+
+    gadm
+  }
+)
+
+# land_crop <- crop(gd_load[[1]], ext(water_u)) 
+
+land_crop <- land_buff <- list()
 base_plt <- ggplot()
-   
+
+
 for (i in seq(length(gd_load))) {
-  # base_plt <- base_plt + geom_spatvector(data = gd_load[[i]]) 
-  base_plt <- base_plt + geom_spatvector(data = land_crop) 
+  land_crop[[i]] <- crop(gd_load[[i]], ext(water_u))
+  
+  # base_plt <- base_plt + geom_spatvector(data = gd_load[[i]])
+  base_plt <- base_plt + geom_spatvector(data = land_crop[[i]])
+  
+  # buffer around polygon
+  land_buff[[i]] <- buffer(land_crop[[i]], 1000)
+  
 }
+
 base_plt
 
-# buffer around polygon
-land_buff <- buffer(land_crop, 1000)
-plot(land_buff)
+land_union <- purrr::reduce(land_buff, terra::union)
 
 # create raster with the same resoltion as currents data
 land_mask <- rasterize(
-  land_buff, 
+  land_union, 
   rast(ext(water_u), resolution = res(water_u)), 
   field = 1
   ) 
