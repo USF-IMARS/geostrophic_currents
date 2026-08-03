@@ -232,7 +232,7 @@ plot(wind_v)
 
 ## STEP 3: Crop and Create Land Mask
 
-```{r}
+```{r country-download}
 ## Countries for which the shorelines are downloaded and plotted
 countries <- c("USA", "Cuba", "Bahamas")
 
@@ -250,8 +250,26 @@ gd_load <- lapply(
   }
 )
 
+# plot.xlim <- lat_lon[1:2]
+# plot.ylim <- lat_lon[3:4]
+
+scale <- 0.05
+# aspect.ratio <- 1 / cos(mean(plot.ylim) * pi / 180)
+aspect.ratio <- 1 / cos(mean(lat_lon[3:4]) * pi / 180)
+```
+
+
+```{r country-combine}
 land_crop <- land_buff <- list()
-base_plt <- ggplot()
+base_plt <-
+  ggplot() +
+  labs(x = NULL, y = NULL) +
+  coord_sf(
+    xlim = lat_lon[1:2],
+    ylim = lat_lon[3:4],
+    expand = FALSE
+    )  +
+  theme_bw()
 
 
 for (i in seq(length(gd_load))) {
@@ -630,6 +648,9 @@ for (i in seq(length(simulation_time))) {
   # previous_position <- part_coords
   previous_position <- part_spv
 
+  
+  # ---- plot ---- #
+  
   # for each n-th simulation step store the results 
   #  (where n = simulation_out_step):
   # if ((i - 1) %% simulation_out_step == 0) {
@@ -662,11 +683,11 @@ for (i in seq(length(simulation_time))) {
     #   "ymin" = plot.lims[[2]] - add_deg, 
     #   "ymax" = plot.lims[[2]] + add_deg
     #   )
-    plot.xlim <- lat_lon[1:2]
-    plot.ylim <- lat_lon[3:4]
-    
-    scale <- 0.05
-    aspect.ratio <- 1 / cos(mean(plot.ylim) * pi / 180)
+    # plot.xlim <- lat_lon[1:2]
+    # plot.ylim <- lat_lon[3:4]
+    # 
+    # scale <- 0.05
+    # aspect.ratio <- 1 / cos(mean(plot.ylim) * pi / 180)
     
     wat_arrow <- dplyr::left_join(
       as.data.frame(water_u[[tsel_c]], xy = TRUE),
@@ -684,17 +705,17 @@ for (i in seq(length(simulation_time))) {
       ) %>%
       rename(
         "north" = 3,
-        "east" = 4
+        "east"  = 4
       ) %>%
       mutate(
-        mag = sqrt(north^2 + east^2),
+        mag   = sqrt(north^2 + east^2),
         north = north * scale,
         east  = east * scale
         )
     
     png(
       here(plot_out_path, sprintf("out%03d.png", out_list)),
-      width = 2000,
+      width  = 2000,
       height = 1500,
       res    = 300,
       type   = "cairo"
@@ -706,12 +727,12 @@ for (i in seq(length(simulation_time))) {
         
       # wind
       metR::geom_arrow(
-        data = win_arrow,
+        data    = win_arrow,
         mapping = aes(x = x, dx = north, y = y, dy = east, color = mag),
-        alpha = 0.75,
-        skip = 1,
-        size = 0.5,                              # adjust arrow thickness
-        na.rm = TRUE
+        alpha   = 0.75,
+        skip    = 1,
+        size    = 0.5,                 # adjust arrow thickness
+        na.rm   = TRUE
         ) +
       scale_color_viridis_c(
         name   = "Wind Speed", 
@@ -726,7 +747,7 @@ for (i in seq(length(simulation_time))) {
       metR::geom_arrow(
         data    = wat_arrow,
         mapping = aes(x = x, dx = u, y = y, dy = v, color = mag),
-        skip = 10,
+        skip    = 10,
         size    = 0.5,                              # adjust arrow thickness
         na.rm   = TRUE
         ) +
@@ -739,29 +760,32 @@ for (i in seq(length(simulation_time))) {
       
       # particles  
       tidyterra::geom_spatvector(
-        data = part_results[[out_list]],
+        data  = part_results[[out_list]],
         color = "red"
         ) +
+        
       labs(
         title = paste(
           format(simulation_time[i], "%Y-%m-%d %H:%M:%S"),
           attr(as.POSIXlt(simulation_time[i]),"tzone")),
-        x = NULL,
-        y = NULL
-      ) +
+        # x = NULL,
+        # y = NULL
+      )# +
    
-      coord_sf(
-        xlim = plot.xlim,
-        ylim = plot.ylim,
-        expand = FALSE
-        ) +
-      theme_bw()
+      # coord_sf(
+      #   xlim = plot.xlim,
+      #   ylim = plot.ylim,
+      #   expand = FALSE
+      #   ) #+
+      # # theme_bw()
     )
 
     dev.off()
     
     out_list <- out_list + 1
   }
+  
+  
 }
 
 ## save the resulting particle information:
