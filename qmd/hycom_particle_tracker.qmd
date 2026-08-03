@@ -163,7 +163,7 @@ aviso_download(
 ## STEP 1: Set Up Functions
 
 ```{r}
-## function that reads netcdf files and puts them in a workable stack object:
+# function that reads netcdf files and puts them in a workable stack object:
 read_mover <- function(ncdfile, xvar = "u", yvar = "v", hycom_time = FALSE) {
   
   u <- terra::rast(ncdfile, subds = xvar)
@@ -199,7 +199,7 @@ extend_data <- function(r, band = 21) {
 
 ## STEP 2: Load Currents and Wind Data
 
-```{r}
+```{r load-data}
 temp <- 
   hycom_filt_path %>% 
   pull(file) %>% 
@@ -304,7 +304,7 @@ plot(land_mask)
 ## STEP 4: Specify Particle Release Details
 
 
-```{r}
+```{r release-params}
 rel_params <- list(
   # "start"  = as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC"),
   # "end"    = as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC"),
@@ -370,7 +370,7 @@ base_plt +
 
 ## STEP 5: Specify Simulation Details
 
-```{r}
+```{r simulation-param}
 # time at which the simulation should start and end:
 sim_param <- list(
   "start"    = as.POSIXct(as_datetime(months[1]), tz = "UTC"), # start
@@ -417,7 +417,7 @@ simulation_time <- seq(
 
 ## STEP 6: Set How Many Paricles and Where
 
-```{r}
+```{r particle-setup}
 # for each time step determine how many particles are released:
 n_particles           <- rep(NA, length(simulation_time))
 # n_particles[simulation_time <= release_start] <- 0
@@ -476,26 +476,45 @@ TODO: add in if NA extract then replace with previous value
 part_results          <- list()
 previous_position     <- particles
 
-out_list <- 1
-# i = 1 # rm later
+# out_list <- 1
+# out_list <- length(which(((seq(length(simulation_time)))- 1) %% 3 == 0))
+
+
+direct <- "fwd"
+direct <- "bck"
+signs <- switch(direct,
+  "fwd" = 1,
+  "bck" = -1
+)
+
+out_list <- switch(direct,
+  "fwd" = 1,
+  "bck" = length(which(((seq(length(simulation_time)))- 1) %% 3 == 0))
+)
+
+steps <- switch(
+  direct,
+  "fwd" = seq(length(simulation_time)),
+  "bck" = rev(seq(length(simulation_time)))
+)
 
 ## start looping the simulation times
-for (i in seq(length(simulation_time))) {
-# for (i in 100:120) {
+for (i in steps) {
+# for (i in steps[1:10]) {
   message(paste(i, "of", length(simulation_time)))
   print(paste(i, "of", length(simulation_time)))
   flush.console()
   ## Get the water currents that are closest to the current simulation time
   tdif   <- abs(water_time - simulation_time[i])
   tsel_c <- which(tdif == min(tdif))[[1]]
-  twat_u <- extend_data(water_u[[tsel_c]])
-  twat_v <- extend_data(water_v[[tsel_c]])
+  twat_u <- extend_data(water_u[[tsel_c]]) * signs
+  twat_v <- extend_data(water_v[[tsel_c]]) * signs
   
   
   tdif   <- abs(wind_time - simulation_time[i])
   tsel_w <- which(tdif == min(tdif))[[1]]
-  twin_u <- extend_data(wind_u[[tsel_w]])
-  twin_v <- extend_data(wind_v[[tsel_w]])
+  twin_u <- extend_data(wind_u[[tsel_w]]) * signs
+  twin_v <- extend_data(wind_v[[tsel_w]]) * signs
 
   ## Extract last known particle locations and transform coordinates into meters:
   # 1. transforms decimal degree to meters as matrix x, y coords
@@ -599,8 +618,13 @@ for (i in seq(length(simulation_time))) {
     if (length(idx) != 0) {
   
     for (j in idx) {
-      x0 <- prev_xy[j, 1]; y0 <- prev_xy[j, 2]  # old (water)
-      x1 <- new_xy[j, 1]; y1 <- new_xy[j, 2]    # new (land)
+       # old (water)
+      x0 <- prev_xy[j, 1] 
+      y0 <- prev_xy[j, 2]
+      
+      # new (land)
+      x1 <- new_xy[j, 1] 
+      y1 <- new_xy[j, 2]    
   
       # Binary search along the segment for the last water point
       a <- 0; b <- 1
@@ -770,19 +794,19 @@ for (i in seq(length(simulation_time))) {
           attr(as.POSIXlt(simulation_time[i]),"tzone")),
         # x = NULL,
         # y = NULL
-      )# +
+      ) +
    
-      # coord_sf(
-      #   xlim = plot.xlim,
-      #   ylim = plot.ylim,
-      #   expand = FALSE
-      #   ) #+
+      coord_sf(
+        xlim = plot.xlim,
+        ylim = plot.ylim,
+        expand = FALSE
+        ) #+
       # # theme_bw()
     )
 
     dev.off()
     
-    out_list <- out_list + 1
+    out_list <- out_list + signs
   }
   
   
