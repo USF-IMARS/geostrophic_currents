@@ -250,11 +250,7 @@ gd_load <- lapply(
   }
 )
 
-# plot.xlim <- lat_lon[1:2]
-# plot.ylim <- lat_lon[3:4]
-
 scale <- 0.05
-# aspect.ratio <- 1 / cos(mean(plot.ylim) * pi / 180)
 aspect.ratio <- 1 / cos(mean(lat_lon[3:4]) * pi / 180)
 ```
 
@@ -306,11 +302,17 @@ plot(land_mask)
 
 ```{r release-params}
 rel_params <- list(
-  # "start"  = as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC"),
-  # "end"    = as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC"),
+  # time at which the simulated release should start:
   "start"  = as.POSIXct(as_datetime(months[1]), tz = "UTC"),
+  
+   # time at which the simulated release should end:
   "end"    = as.POSIXct(as_datetime(months[1]) + days(1), tz = "UTC"),
-  "num"    = 10, # number of particles to release
+  
+  # number of particles to release in total:
+  # "num"    = 10,
+  "num"    = 100,
+  
+  # release coordinates:
   # "coords" = c(
   #   -83, # lon
   #   24,  # lat
@@ -322,9 +324,9 @@ rel_params <- list(
   #   0    # depth not used in simulation
   #   )
   "coords" = list( # location of particle start
-    "lon"   = c(-81.25, -82.6, -83), # lon
-    "lat"   = c(25.5, 24.2, 26),  # lat
-    "depth" = c(0, 0, 0)    # depth not used in simulation
+    "lon"   = c(-81.25, -82.6, -83), # lo
+    "lat"   = c(25.5, 24.2, 26),  
+    "depth" = c(0, 0, 0)   
     )
   ) %T>% 
   print()
@@ -338,34 +340,6 @@ base_plt +
     color = "red", size = rel(2)
   )
 
-# # time at which the simulated release should start:
-# release_start         <- as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC")
-# 
-# # time at which the simulated release should end:
-# release_end           <- as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC")
-# 
-# # number of particles to release in total:
-# # release_n             <- 5000
-# release_n             <- 10
-# 
-# # release coords
-# rel_coords <- 
-#   c(
-#     -83, # lon
-#     24,  # lat
-#     0    # depth not used in simulation
-#   )
-# 
-# # # release lon-coordinate:
-# release_x             <- -81.3
-# release_x             <- -83
-# 
-# # release lat-coordinate:
-# release_y             <- 25.535
-# release_y             <- 24
-# 
-# # release depth (not used yet in simulation)
-# release_z             <- 0
 ```
 
 ## STEP 5: Specify Simulation Details
@@ -373,18 +347,30 @@ base_plt +
 ```{r simulation-param}
 # time at which the simulation should start and end:
 sim_param <- list(
-  "start"    = as.POSIXct(as_datetime(months[1]), tz = "UTC"), # start
+  # time at which the simulation should start:
+  "start"    = as.POSIXct(as_datetime(months[1]), tz = "UTC"),
+  
+  # time at which the simulation should stop:
   "end"      = as.POSIXct(as_datetime(months[2]), tz = "UTC"), # end
   # "end"      = as.POSIXct(as_datetime(months[1]) + days(2), tz = "UTC"), # end
+  
+  # time step of simulation in seconds:
   # "step"     = 60 * 60 / 4, # seconds per step 0.25 hr
   "step"     = 60 * 60 * 6, # seconds per step 6 hr
   # "step"     = 60 * 60 * 3, # seconds per step 3 hr
   # "step"     = 60 * 60, # seconds per step 1 hr
-  "plt_step" = 3 # plot every n-th time
+  
+  # value indicating every n-th time step that should be exported:
+  "plt_step" = 3, 
+  
+  # set direction of simulation
+  "direct" = "fwd" # forward
+  # "direct" = "bck" # backward
 ) %T>% 
   print()
 
 # when simulation occurs
+# create a time series based on the start and end time and the time step:
 simulation_time <- seq(
   sim_param[["start"]], 
   sim_param[["end"]] - sim_param[["step"]], 
@@ -392,27 +378,6 @@ simulation_time <- seq(
   ) %T>%
   print()
 
-# # time at which the simulation should start:
-# simulation_start_time <- as.POSIXct(as_datetime(months[1]), tz = "UTC")
-# 
-# # time at which the simulation should stop
-# simulation_end_time   <- as.POSIXct(as_datetime(months[2]), tz = "UTC")
-# 
-# # time step of simulation in seconds:
-# # simulation_time_step  <- 60 * 60 / 4 # 15 min
-# simulation_time_step  <- 60 * 60 * 6 # 6 hours
-# simulation_time_step  <- 60 * 60 # 1 hours
-# 
-# # integer value indicating every n-th time step that should be exported:
-# simulation_out_step   <- 2
-# 
-# # create a time series based on the start and end time and the time step:
-# simulation_time       <- seq(
-#   simulation_start_time, 
-#   simulation_end_time - simulation_time_step, 
-#   simulation_time_step
-#   ) %T>%
-#   print()
 ```
 
 ## STEP 6: Set How Many Paricles and Where
@@ -425,26 +390,17 @@ n_particles           <- rep(NA, length(simulation_time))
 n_particles[simulation_time <= rel_params[["start"]]] <- 0
 n_particles[simulation_time >= rel_params[["end"]]]   <- rel_params[["num"]]  * length(rel_params$coords$lon)
 
-n_particles[is.na(n_particles)]               <- approx(
-  # c(0, release_n), 
-  c(0, rel_params$num), 
-  n = 2 + sum(is.na(n_particles))
-  )$y[c(-1, -(2 + sum(is.na(n_particles))))]
+n_particles[is.na(n_particles)] <-
+  approx(
+    c(0, rel_params$num),
+    n = 2 + sum(is.na(n_particles))
+  )$y[c(-1, - (2 + sum(is.na(n_particles))))]
 
 n_particles           <- round(n_particles)
 
-# create a SpatialPointsDataFrame for the particles:
+# create a SpatVector for the particles:
 particles <-
   data.frame(
-    # pos_x = rep(release_x, release_n),
-    # pos_y = rep(release_y, release_n),
-    # pos_z = rep(release_z, release_n)
-    # pos_x = rep(rel_coords[1], release_n),
-    # pos_y = rep(rel_coords[2], release_n),
-    # pos_z = rep(rel_coords[3], release_n)
-    # pos_x = rep(rel_params$coords[1],  rel_params$num),
-    # pos_y = rep(rel_params$coords[2],  rel_params$num),
-    # pos_z = rep(rel_params$coords[3],  rel_params$num)
     pos_x = rep(rel_params$coords$lon,  rel_params$num),
     pos_y = rep(rel_params$coords$lat,  rel_params$num),
     pos_z = rep(rel_params$coords$depth,  rel_params$num)
@@ -455,12 +411,10 @@ particles <-
   )
 
 # projection to be used to calculate particle displacement in meters:
-# part_proj <- terra::crs("EPSG:32631") # Europe
 part_proj <- terra::crs("EPSG:6442") # West Florida
 
 # drift factor indicates with which fraction particles are displaced by the wind speed:
 drift_factor    <- 0.03
-# drift_factor    <- 0.5
 
 # the diffusion coefficient, used in random walk simulation
 diffusion_coeff <- 1e5
@@ -476,24 +430,23 @@ TODO: add in if NA extract then replace with previous value
 part_results          <- list()
 previous_position     <- particles
 
-# out_list <- 1
-# out_list <- length(which(((seq(length(simulation_time)))- 1) %% 3 == 0))
-
-
-direct <- "fwd"
-direct <- "bck"
-signs <- switch(direct,
+# set direction to multiple vectors by
+signs <- switch(
+  sim_param$direct,
   "fwd" = 1,
   "bck" = -1
 )
 
-out_list <- switch(direct,
+# set figure numbers based on forward or backward
+out_list <- switch(
+  sim_param$direct,
   "fwd" = 1,
   "bck" = length(which(((seq(length(simulation_time)))- 1) %% 3 == 0))
 )
 
+# set direction of time steps
 steps <- switch(
-  direct,
+  sim_param$direct,
   "fwd" = seq(length(simulation_time)),
   "bck" = rev(seq(length(simulation_time)))
 )
@@ -501,10 +454,10 @@ steps <- switch(
 ## start looping the simulation times
 for (i in steps) {
 # for (i in steps[1:10]) {
-  message(paste(i, "of", length(simulation_time)))
+  # message(paste(i, "of", length(simulation_time)))
   print(paste(i, "of", length(simulation_time)))
-  flush.console()
-  ## Get the water currents that are closest to the current simulation time
+  
+  # Get the water currents that are closest to the current simulation time
   tdif   <- abs(water_time - simulation_time[i])
   tsel_c <- which(tdif == min(tdif))[[1]]
   twat_u <- extend_data(water_u[[tsel_c]]) * signs
@@ -516,7 +469,7 @@ for (i in steps) {
   twin_u <- extend_data(wind_u[[tsel_w]]) * signs
   twin_v <- extend_data(wind_v[[tsel_w]]) * signs
 
-  ## Extract last known particle locations and transform coordinates into meters:
+  # Extract last known particle locations and transform coordinates into meters:
   # 1. transforms decimal degree to meters as matrix x, y coords
   # 2. extract coordinates
   part_coords <- prev_coords <- 
@@ -524,10 +477,9 @@ for (i in steps) {
     terra::crds()
 
   
-  ## displace particles with *water currents*
+  # displace particles with *water currents*
   part_coords[seq(0, n_particles[i]), ] <- 
     part_coords[seq(0, n_particles[i]), ] +
-    # simulation_time_step * # integrate m/s to m i.e m/s * seconds
     sim_param[["step"]] * # integrate m/s to m i.e m/s * seconds
     # extract u and v components where particle is nearest
     # bilinear = 4 nearest cells
@@ -540,13 +492,11 @@ for (i in steps) {
     bad_rows <- unique(which(arr.ind = TRUE, is.nan(part_coords))[, 1])
     part_coords[bad_rows, ] <- prev_coords[bad_rows,]
     prev_coords <- part_coords
-    # stop()
   }
   
   ## displace particles with *wind*
   part_coords[seq(0, n_particles[i]),] <- 
     part_coords[seq(0, n_particles[i]),] +
-    # simulation_time_step * drift_factor * 
     sim_param[["step"]] * drift_factor * 
     cbind(
       "x" = terra::extract(twin_u, previous_position, method = "bilinear", ID = FALSE)[, 1],
@@ -559,28 +509,16 @@ for (i in steps) {
     part_coords[bad_rows, ] <- prev_coords[bad_rows,]
    }
   
-  ## displace with *random walk* (diffusion):
+  # displace with *random walk* (diffusion):
   part_coords[0:n_particles[i],] <- 
     part_coords[0:n_particles[i], ] +
     cbind(
       "x" = runif(n_particles[i], -1, 1),
       "y" = runif(n_particles[i], -1, 1)
-        # ) * sqrt(diffusion_coeff * simulation_time_step * 6 / 1e4)
       ) * sqrt(diffusion_coeff * sim_param[["step"]] * 6 / 1e4)
 
-  ## turn particle information into a spatvector object:
-  # part_coords <- 
-  #   as.data.frame(part_coords) %>%
-  #   vect(
-  #     geom = c("x", "y"),
-  #     crs  = part_proj
-  #   ) %>%
-  #   project(crs(previous_position))
-
   
-  
-  
-  ## turn particle information into a spatvector object:
+  # turn particle information into a spatvector object:
   part_spv <-
     as.data.frame(part_coords) %>%
     vect(geom = c("x", "y"), crs = part_proj) %>%
@@ -595,7 +533,7 @@ for (i in steps) {
   new_proj  <- terra::project(part_spv, part_proj)
   new_xy    <- terra::crds(new_proj)
   
-  # Check land mask at new positions
+  # ---- Check land mask at new positions ---- #
   land_vals <- terra::extract(
     land_mask, 
     new_proj, 
@@ -616,45 +554,46 @@ for (i in steps) {
     idx <- which(!ok & in_domain)
     
     if (length(idx) != 0) {
-  
-    for (j in idx) {
-       # old (water)
-      x0 <- prev_xy[j, 1] 
-      y0 <- prev_xy[j, 2]
-      
-      # new (land)
-      x1 <- new_xy[j, 1] 
-      y1 <- new_xy[j, 2]    
-  
-      # Binary search along the segment for the last water point
-      a <- 0; b <- 1
-      for (k in 1:10) {
-        t <- (a + b) / 2
-        xt <- x0 + t * (x1 - x0)
-        yt <- y0 + t * (y1 - y0)
-  
-        tmp_spv <- vect(
-          data.frame(x = xt, y = yt),
-          geom = c("x", "y"),
-          crs  = part_proj
-        ) %>%
-          project(crs(land_mask))
-  
-        val <- terra::extract(land_mask, tmp_spv, method = "simple", ID = FALSE)
-        if (is.na(val)) val <- 0  # treat NA as water if needed
-  
-        if (val == 0) {
-          a <- t  # still in water, go further
-        } else {
-          b <- t  # in land, go back
+      for (j in idx) {
+         # old (water)
+        x0 <- prev_xy[j, 1] 
+        y0 <- prev_xy[j, 2]
+        
+        # new (land)
+        x1 <- new_xy[j, 1] 
+        y1 <- new_xy[j, 2]    
+    
+        # Binary search along the segment for the last water point
+        a <- 0
+        b <- 1
+        
+        for (k in 1:10) {
+          t  <- (a + b) / 2
+          xt <- x0 + t * (x1 - x0)
+          yt <- y0 + t * (y1 - y0)
+    
+          tmp_spv <- vect(
+            data.frame(x = xt, y = yt),
+            geom = c("x", "y"),
+            crs  = part_proj
+            ) %>%
+            project(crs(land_mask))
+    
+          val <- terra::extract(land_mask, tmp_spv, method = "simple", ID = FALSE)
+          if (is.na(val)) val <- 0  # treat NA as water if needed
+    
+          if (val == 0) {
+            a <- t  # still in water, go further
+          } else {
+            b <- t  # in land, go back
+          }
         }
+    
+        # Use point just inside water
+        t_final <- a
+        new_xy[j, 1] <- x0 + t_final * (x1 - x0)
+        new_xy[j, 2] <- y0 + t_final * (y1 - y0)
       }
-  
-      # Use point just inside water
-      t_final <- a
-      new_xy[j, 1] <- x0 + t_final * (x1 - x0)
-      new_xy[j, 2] <- y0 + t_final * (y1 - y0)
-    }
   
     part_spv <- vect(
       as.data.frame(new_xy),
@@ -675,14 +614,10 @@ for (i in steps) {
   
   # ---- plot ---- #
   
-  # for each n-th simulation step store the results 
-  #  (where n = simulation_out_step):
-  # if ((i - 1) %% simulation_out_step == 0) {
+  # for each n-th simulation step store the results (where n = ["plt_step"]]):
   if ((i - 1) %% sim_param[["plt_step"]] == 0) {
     
     # add an indicator of the release state of the particles:
-    # part_coords$released <- rep(FALSE, release_n)
-    # part_coords$released <- rep(FALSE, rel_params$num)
     part_spv$released <- rep(FALSE, rel_params$num)
     
     # part_coords$released[0:n_particles[i]] <- TRUE
@@ -695,41 +630,25 @@ for (i in steps) {
       attr(as.POSIXlt(simulation_time[i]),"tzone")
       )
     
-    
-    # plot limits by adding 2 degrees 
-    # add_deg <- 0.5
-    # plot.lims <- apply(crds(part_coords), 2, mean)
-    # plot.xlim <- c(
-    #   "xmin" = plot.lims[[1]] - add_deg, 
-    #   "xmax" = plot.lims[[1]] + add_deg
-    #   )
-    # plot.ylim <- c(
-    #   "ymin" = plot.lims[[2]] - add_deg, 
-    #   "ymax" = plot.lims[[2]] + add_deg
-    #   )
-    # plot.xlim <- lat_lon[1:2]
-    # plot.ylim <- lat_lon[3:4]
-    # 
-    # scale <- 0.05
-    # aspect.ratio <- 1 / cos(mean(plot.ylim) * pi / 180)
-    
+    # extract water currents x, y and magnitude
     wat_arrow <- dplyr::left_join(
       as.data.frame(water_u[[tsel_c]], xy = TRUE),
       as.data.frame(water_v[[tsel_c]], xy = TRUE)
       ) %>%
       rename(
-        "u" = 3,
-        "v" = 4
+        "u" = contains("u_"),
+        "v" = contains("v_")
       ) %>%
       mutate(mag = sqrt(u^2 + v^2))
 
+    # extract wind speed x, y and magnitude
     win_arrow <- dplyr::left_join(
       as.data.frame(wind_u[[tsel_w]], xy = TRUE),
       as.data.frame(wind_v[[tsel_w]], xy = TRUE) 
       ) %>%
       rename(
-        "north" = 3,
-        "east"  = 4
+        "north" = contains("north"),
+        "east"  = contains("east")
       ) %>%
       mutate(
         mag   = sqrt(north^2 + east^2),
@@ -737,6 +656,7 @@ for (i in steps) {
         east  = east * scale
         )
     
+    # create image file
     png(
       here(plot_out_path, sprintf("out%03d.png", out_list)),
       width  = 2000,
@@ -755,7 +675,7 @@ for (i in steps) {
         mapping = aes(x = x, dx = north, y = y, dy = east, color = mag),
         alpha   = 0.75,
         skip    = 1,
-        size    = 0.5,                 # adjust arrow thickness
+        size    = 0.5, # adjust arrow thickness
         na.rm   = TRUE
         ) +
       scale_color_viridis_c(
@@ -772,7 +692,7 @@ for (i in steps) {
         data    = wat_arrow,
         mapping = aes(x = x, dx = u, y = y, dy = v, color = mag),
         skip    = 10,
-        size    = 0.5,                              # adjust arrow thickness
+        size    = 0.5, # adjust arrow thickness
         na.rm   = TRUE
         ) +
       scale_color_cross_blended_c(
@@ -791,17 +711,14 @@ for (i in steps) {
       labs(
         title = paste(
           format(simulation_time[i], "%Y-%m-%d %H:%M:%S"),
-          attr(as.POSIXlt(simulation_time[i]),"tzone")),
-        # x = NULL,
-        # y = NULL
+          attr(as.POSIXlt(simulation_time[i]),"tzone"))
       ) +
    
       coord_sf(
         xlim = plot.xlim,
         ylim = plot.ylim,
         expand = FALSE
-        ) #+
-      # # theme_bw()
+        ) 
     )
 
     dev.off()
@@ -812,7 +729,7 @@ for (i in steps) {
   
 }
 
-## save the resulting particle information:
+# save the resulting particle information:
 # save(part_results, file = "output/out.RData", compress = TRUE)
 ```
 ## STEP 8: Convert Figures into Video using `ffmpeg`
@@ -837,212 +754,11 @@ system2(
 
 
 ```{r}
-(base_plt +
-  # water  
-      metR::geom_arrow(
-        data    = wat_arrow,
-        mapping = aes(x = x, dx = u, y = y, dy = v, color = mag),
-        skip = 10,
-        size    = 0.5,                              # adjust arrow thickness
-        na.rm   = TRUE
-        ) +
-      scale_color_cross_blended_c(
-        name   = "Current", 
-        breaks = seq(0, 3, 1),
-        limits = c(0, 3),
-        oob    = scales::oob_squish,
-        ) + 
-  #  geom_point(
-  #    data = full_join(
-  #     terra::extract(twat_u, previous_position, method = "bilinear", ID = FALSE, xy = T),
-  #     terra::extract(twat_v, previous_position, method = "bilinear", ID = FALSE, xy = T),
-  #     by = c("x" = "x", "y" = "y")
-  #     ) %>% 
-  # distinct(x, y),
-  # aes(x = x, y = y), color = "red" 
-  #  ) +
-    geom_spatvector(
-     data = 
-       (part_coords[seq(0, n_particles[i]), ] +
-          sim_param[["step"]] *
-          cbind(
-            "x" = terra::extract(twat_u, previous_position, method = "bilinear", ID = FALSE)[, 1],
-            "y" = terra::extract(twat_v, previous_position, method = "bilinear", ID = FALSE)[, 1]
-            )[seq(0, n_particles[i]), ]
-        ) %>% 
-            as_tibble() %>%
-        vect(geom = c("x", "y"), crs = part_proj) %>%
-        project(crs(previous_position)),
-    # aes(x = x, y = y), 
-    color = "red"
-    ) +
-    
-   # geom_spatvector(data = previous_position, color = "green") +
-    
-   geom_spatvector(
-    data =
-       as_tibble(part_coords[seq(0, n_particles[i]), ]) %>%
-        vect(geom = c("x", "y"), crs = part_proj) %>%
-        project(crs(previous_position)),
-
-    color = "blue") +
- 
-     geom_spatvector(
-    data =
-       new_proj[is.na(land_vals)],
-
-    color = "green") +
-   
-    geom_sf(
-    data = sf::st_as_sf(as.polygons(rast(ext(land_mask)))),
-    fill = NA
-  ) +
-   
-   # coord_sf(xlim = c(-81.22, -81.14), ylim = c(25.4, 25.48), expand = FALSE)
-   theme()
- ) 
-
-cbind(
-      "x" = terra::extract(twat_u, previous_position, method = "bilinear", ID = FALSE, xy = T)[, 1],
-      "y" = terra::extract(twat_v, previous_position, method = "bilinear", ID = FALSE, xy = T)[, 1]
-      ) %>% 
-  as_tibble()
-
-full_join(
-      terra::extract(twat_u, previous_position, method = "bilinear", ID = FALSE, xy = T),
-      terra::extract(twat_v, previous_position, method = "bilinear", ID = FALSE, xy = T),
-      by = c("x" = "x", "y" = "y")
-      ) %>% 
-  distinct(x, y)
-
-ggplot() +
- 
-
+part_spv
 ```
 
 
-```{r}
-ggplot() +
-  geom_point(
-  # geom_spatvector(
-    data = (
-      part_coords[seq(0, n_particles[i]), ] +
-        sim_param[["step"]] *
-        cbind(
-          "x" = terra::extract(twat_u, previous_position, method = "bilinear", ID = FALSE)[, 1],
-          "y" = terra::extract(twat_v, previous_position, method = "bilinear", ID = FALSE)[, 1]
-        )[seq(0, n_particles[i]), ]
-    ) %>%
-      as_tibble() ,
-    aes(x = x, y = y),
-    color = "red"
-  ) +
-  geom_point(
-    # geom_spatvector(
-    data = as_tibble(part_coords[seq(0, n_particles[i]), ]),
-             aes(x = x, y = y),
-             color = "green"
-    )
-```
 
 
-```{r}
-# ggplot() +
-  base_plt +
-  # geom_point(
-  geom_spatvector(
-    data = (
-      part_coords[seq(0, n_particles[i]), ] +
-        sim_param[["step"]] *
-        cbind(
-          "x" = terra::extract(twat_u, previous_position, method = "bilinear", ID = FALSE)[, 1],
-          "y" = terra::extract(twat_v, previous_position, method = "bilinear", ID = FALSE)[, 1]
-        )[seq(0, n_particles[i]), ]
-    ) %>%
-      as_tibble()  %>%
-        vect(geom = c("x", "y"), crs = part_proj) %>%
-        project(crs(previous_position)),
-    # aes(x = x, y = y),
-    color = "red"
-  ) +
-  # geom_point(
-    geom_spatvector(
-    data = as_tibble(part_coords[seq(0, n_particles[i]), ])  %>%
-        vect(geom = c("x", "y"), crs = part_proj) %>%
-        project(crs(previous_position)),
-             # aes(x = x, y = y),
-             color = "green")  +
-   
-   # coord_sf(xlim = c(-81.22, -81.14), ylim = c(25.4, 25.48), expand = FALSE,
-            # crs = part_proj
-            # )
-theme()
 
-```
-```{r}
-rel_params <- list(
-  # "start"  = as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC"),
-  # "end"    = as.POSIXct(as_datetime(months[1]) + days(3), tz = "UTC"),
-  "start"  = as.POSIXct(as_datetime(months[1]), tz = "UTC"),
-  "end"    = as.POSIXct(as_datetime(months[1]) + days(1), tz = "UTC"),
-  "num"    = 10, # number of particles to release
-  # "coords" = c(
-  #   -83, # lon
-  #   24,  # lat
-  #   0    # depth not used in simulation
-  #   )
-  "coords" = list( # location of particle start
-    "lon" = c(-81.25, -83), # lon
-    "lat" = c(25.5, 24),  # lat
-    "depth" = c(0, 0)    # depth not used in simulation
-    )
-  ) %T>% 
-  print()
-
-
-data.frame(
-    # pos_x = rep(release_x, release_n),
-    # pos_y = rep(release_y, release_n),
-    # pos_z = rep(release_z, release_n)
-    # pos_x = rep(rel_coords[1], release_n),
-    # pos_y = rep(rel_coords[2], release_n),
-    # pos_z = rep(rel_coords[3], release_n)
-    # pos_x = rep(rel_params$coords[1],  rel_params$num),
-    # pos_y = rep(rel_params$coords[2],  rel_params$num),
-    # pos_z = rep(rel_params$coords[3],  rel_params$num)
-    pos_x = rep(rel_params$coords$lon,  rel_params$num),
-    pos_y = rep(rel_params$coords$lat,  rel_params$num),
-    pos_z = rep(rel_params$coords$depth,  rel_params$num)
-  )
-```
-
-
-```{r}
-test <- data.frame()
-
-for (li in part_results) {
-  # print(crds(li))
-  
-  temp <- crds(li, TRUE) %>% 
-    mutate(
-      .before = 1,
-      id = as.character(row_number())
-    )
-  test <- rbind(test, temp)
-  
-}
-print(test)
-
-base_plt +
-# ggplot() +
-  geom_path(data = test, aes(x = x, y = y, color = id)) +
-  geom_point(data = test, aes(x = x, y = y, color = id)) +
-  scale_color_discrete() +
-   coord_sf(
-        xlim = plot.xlim,
-        ylim = plot.ylim
-        )  +
-  theme_bw()
-# crds(part_results[[64]])
-```
 
