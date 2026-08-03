@@ -826,7 +826,143 @@ plotly::ggplotly(
 ```
 
 
+# ERA5 Wind Data from csv
+```{r}
+wind_dir <- rstudioapi::selectDirectory()
+
+wind_path <- dir_ls(wind_dir) %>% 
+  print()
+```
+
+```{r}
+era_wind <- 
+  wind_path[1] %>% 
+  readr::read_csv(show_col_types = FALSE)
+
+era_wind %>% 
+  filter(
+    date_utc == "2022-07-30" & hour_utc == 5
+  ) %>%
+  ggplot() +
+  geom_raster(
+    aes(x = longitude, y = latitude, fill = wind_speed_m_s)
+  ) +
+  scale_fill_viridis_c()
+
+era_wind %>% 
+  filter(
+    date_utc == "2022-07-30" & hour_utc == 5
+  ) %>%
+  mutate(
+    # .keep = "used",
+    # mag = sqrt(u10_m_s^2 + v10_m_s^2),
+    # diff = mag - wind_speed_m_s
+  ) %>% 
+  ggplot() +
+ # wind
+      metR::geom_vector(
+        # data    = win_arrow,
+        mapping = aes(
+          x = longitude, 
+          y = latitude, 
+          dx = u10_m_s * scale * 2, 
+          dy = v10_m_s * scale * 2, 
+          color = wind_speed_m_s
+          ),
+        alpha   = 0.75,
+        skip    = 1,
+        size    = 0.5, # adjust arrow thickness
+        na.rm   = TRUE
+        ) +
+      scale_color_viridis_c(
+        name   = "Wind Speed", 
+        breaks = seq(0, 20, 5),
+        limits = c(0, 20),
+        oob    = scales::oob_squish
+        ) +
+  scale_mag()
+```
 
 
+```{r}
+era_wind %>% 
+  filter(
+    date_utc == "2022-07-30" & hour_utc == 5
+  ) %>%
+  mutate(
+    # .keep = "used",
+    # mag = sqrt(u10_m_s^2 + v10_m_s^2),
+    # diff = mag - wind_speed_m_s
+    angle = Angle(u10_m_s, v10_m_s)
+  ) %>% 
+  slice(c(70 )) %>%
+  ggplot() +
+ # wind
+      metR::geom_vector(
+        # data    = win_arrow,
+        mapping = aes(
+          x = longitude, 
+          y = latitude,    
+          mag = wind_speed_m_s*10,
+          angle =  angle,
+          color = wind_speed_m_s
+          ),
+        alpha   = 0.75,
+        skip    = 0,
+        size    = 0.5, # adjust arrow thickness
+        na.rm   = TRUE
+        ) +
+      scale_color_viridis_c(
+        name   = "Wind Speed", 
+        breaks = seq(0, 20, 5),
+        limits = c(0, 20),
+        oob    = scales::oob_squish
+        ) 
 
+
+```
+
+
+```{r}
+ggplot() +
+  # annotate(
+  #   "segment",
+  #   x = 0,
+  #   y = 0,
+  #   xend = -3.9649353,
+  #   yend = 0.223754883
+  # ) +
+  geom_arrow(
+    # data = tibble(
+    #   x = 0,
+    #   y = 0,
+    #   angle = 273.2300,
+    #   mag = 3.971244,
+    #   color = 3.971244,
+    #   dx = -3.9649353,
+    #   dy = 0.223754883
+    # ),
+    data = era_wind %>% 
+  filter(
+    date_utc == "2022-07-30" & hour_utc == 5
+  ) %>% slice(1),
+    aes(
+      x = longitude,
+      y = latitude,
+      dx = u10_m_s,
+      dy = v10_m_s,
+      # angle = Angle(u10_m_s, v10_m_s),
+      # mag = Mag(u10_m_s, v10_m_s)
+    ),
+    color = "red",
+    pivot = 0,
+    direction = "cw"
+  ) +
+  scale_mag() +
+  # geom_hline(yintercept = 0, linetype = "dashed") +
+  # geom_vline(xintercept = 0, linetype = "dashed") +
+  # # coord_cartesian(xlim = c(-7, 7), ylim = c(-7, 7)) +
+  theme()
+  
+```
 
