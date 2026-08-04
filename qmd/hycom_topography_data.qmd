@@ -1,0 +1,101 @@
+---
+title: "HYCOM Topography Map"
+author: "Sebastian Di Geronimo"
+date: 2026-08-04
+format: html
+editor: source
+---
+
+# 1.0 ---- Summary of Document ----
+
+This is to show what topography data is used in the HYCOM-TSIS model. 
+
+This comes from: <https://data.hycom.org/datasets/GOMe0.01/expt_02.8/topo/>
+
+Looks to have a resolution of 0.01° ~ 1km
+
+# 2.0 ---- Setup ----
+
+
+## 2.1 Load Libraries
+
+```{r setup, include=FALSE}
+if (!nzchar(system.file(package = "librarian"))) 
+  install.packages("librarian")
+
+librarian::shelf(
+  quiet = TRUE,
+  librarian, conflicted, ggplot2, tibble, tidyr, dplyr, here, fs, magrittr,
+  
+  # additional
+  tidync, metR
+)
+
+conflicts_prefer(
+  dplyr::filter(), 
+  dplyr::select()
+  )
+  
+
+```
+
+## 2.2 Load Dataset
+
+```{r load-data}
+region_path <- 
+  here("data", "raw", "topography") %>%
+  dir_ls(regexp = "depth") %T>% 
+  print()
+region_nc <- tidync::tidync(region_path)
+region_nc
+
+region_tib <- 
+  hyper_tibble(region_nc) %>%
+  # filtered for South Florida
+  filter(between(lon, -85, -80) & between(lat, 23, 28))
+```
+
+
+```{r load-data}
+ggplot() +
+  geom_tile(
+    data = region_tib,
+    aes(x = lon, y = lat, fill = bathy)
+  ) +
+  metR::scale_fill_divergent() +
+  labs(
+    x = NULL,
+    y = NULL,
+    fill = "Depth (m)"
+  ) +
+  metR::scale_fill_divergent() +
+  coord_sf(expand = FALSE)
+
+```
+
+
+```{r}
+shelf(sf)
+region_sf <- sf::st_as_sf(region_tib, coords = c("lon", "lat"))
+
+ggplot() +
+  geom_sf(
+    data = region_sf,
+    aes(color = bathy)
+  ) +
+  metR::geom_contour2(
+    data = region_tib,
+    aes(x = lon, y = lat, z = bathy),
+    breaks = c(0, 10, 50, 100, 500, 1000, 2000, 3000)
+  ) +
+  labs(
+    x = NULL,
+    y = NULL,
+    color = "Depth (m)"
+  ) +
+  metR::scale_fill_divergent() +
+  coord_sf(expand = FALSE)
+```
+
+
+
