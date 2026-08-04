@@ -1,5 +1,5 @@
 ---
-title: "HYCOM Topography Map"
+title: "HYCOM-TSIS Topography Map"
 author: "Sebastian Di Geronimo"
 date: 2026-08-04
 format: html
@@ -28,7 +28,7 @@ librarian::shelf(
   librarian, conflicted, ggplot2, tibble, tidyr, dplyr, here, fs, magrittr,
   
   # additional
-  tidync, metR
+  tidync, metR, sf
 )
 
 conflicts_prefer(
@@ -42,15 +42,19 @@ conflicts_prefer(
 ## 2.2 Load Dataset
 
 ```{r load-data}
-region_path <- 
+# topography path
+topo_path <- 
   here("data", "raw", "topography") %>%
   dir_ls(regexp = "depth") %T>% 
   print()
-region_nc <- tidync::tidync(region_path)
-region_nc
 
-region_tib <- 
-  hyper_tibble(region_nc) %>%
+# load data
+topo_nc <- tidync::tidync(topo_path)
+topo_nc
+
+# convert to tibble
+topo_tib <- 
+  hyper_tibble(topo_nc) %>%
   # filtered for South Florida
   filter(between(lon, -85, -80) & between(lat, 23, 28))
 ```
@@ -59,7 +63,7 @@ region_tib <-
 ```{r load-data}
 ggplot() +
   geom_tile(
-    data = region_tib,
+    data = topo_tib,
     aes(x = lon, y = lat, fill = bathy)
   ) +
   metR::scale_fill_divergent() +
@@ -75,16 +79,16 @@ ggplot() +
 
 
 ```{r}
-shelf(sf)
-region_sf <- sf::st_as_sf(region_tib, coords = c("lon", "lat"))
+# convert to sf object for better plotting
+topo_sf <- sf::st_as_sf(topo_tib, coords = c("lon", "lat"))
 
 ggplot() +
   geom_sf(
-    data = region_sf,
+    data = topo_sf,
     aes(color = bathy)
   ) +
   metR::geom_contour2(
-    data = region_tib,
+    data = topo_tib,
     aes(x = lon, y = lat, z = bathy),
     breaks = c(0, 10, 50, 100, 500, 1000, 2000, 3000)
   ) +
