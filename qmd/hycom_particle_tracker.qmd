@@ -228,8 +228,7 @@ wind_u     <- era_u10_m_s
 wind_v     <- era_v10_m_s
 wind_time  <- time(era_u10_m_s)
 # rm(temp)
-```
-```{r}
+
 if (ext(wind_u) != ext(water_u)) {
   # Define a common extent (could be from one raster or custom)
   common_ext <- intersect(ext(wind_u), ext(water_u))
@@ -244,12 +243,6 @@ if (ext(wind_u) != ext(water_u)) {
   # r2_crop <- resample(r2_crop, r1_crop, method = "bilinear")
 }
 ```
-```{r plot-vectors}
-plot(water_u)
-plot(water_v)
-plot(wind_u)
-plot(wind_v)
-```
 
 ```{r plot-vectors}
 plot(water_u)
@@ -257,6 +250,8 @@ plot(water_v)
 plot(wind_u)
 plot(wind_v)
 ```
+
+
 
 ## STEP 3: Crop and Create Land Mask
 
@@ -783,7 +778,7 @@ system2(
     here(plot_out_path, "out%03d.png"),
     "-c:v libx264 -pix_fmt yuv420p",
     here(dirname(plot_out_path), paste0(
-      "particle3_n_", rel_params$num, "_", format(Sys.Date(), "%Y_%m_%d"), ".mp4"
+      "particle_n_", rel_params$num, "_", format(Sys.Date(), "%Y_%m_%d"), ".mp4"
       )
     )
   )
@@ -807,7 +802,7 @@ all_results <-
     lat  = st_coordinates(geometry)[,2],
     )
 
-readr::write_csv(all_results, here(dirname(plot_out_path), "test.csv"))
+readr::write_csv(all_results, here(dirname(plot_out_path), "particle_movement.csv"))
 ```
 
 
@@ -868,7 +863,7 @@ wind_path <- dir_ls(wind_dir, regexp = "WS17282|WS20342") %>%
 ```{r}
 scale <- 0.5
 era_wind <- 
-  wind_path[1] %>% 
+  wind_path[2] %>% 
   readr::read_csv(show_col_types = FALSE)
 
 era_wind %>% 
