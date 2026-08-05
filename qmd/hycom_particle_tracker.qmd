@@ -78,8 +78,10 @@ hycom_filt_path <-
       date, 
       # as_date("2017-10-11") - days(10), 
       # as_date("2017-10-12") + days(5)
-      as_date("2017-10-01"), 
-      as_date("2017-10-31")
+      # as_date("2017-10-01"), 
+      # as_date("2017-10-31")
+      min(era_wind$date_utc), 
+      max(era_wind$date_utc)
       )
   ) %T>%
   print()
@@ -210,17 +212,43 @@ water_v    <- temp$v
 water_time <- temp$z
 rm(temp)
 
-## Read the wind data:
-temp       <- 
-  here(path_save) %>%
-  fs::dir_ls(regexp = dataset_id_wind) %>%
-  .[[1]] %>%
-  read_mover("northward_wind", "eastward_wind")
+# ## Read the wind data:
+# temp       <- 
+#   here(path_save) %>%
+#   fs::dir_ls(regexp = dataset_id_wind) %>%
+#   .[[1]] %>%
+#   read_mover("northward_wind", "eastward_wind")
+# 
+# wind_u     <- temp$u
+# wind_v     <- temp$v
+# wind_time  <- temp$z
+# rm(temp)
 
-wind_u     <- temp$u
-wind_v     <- temp$v
-wind_time  <- temp$z
-rm(temp)
+wind_u     <- era_u10_m_s
+wind_v     <- era_v10_m_s
+wind_time  <- time(era_u10_m_s)
+# rm(temp)
+```
+```{r}
+if (ext(wind_u) != ext(water_u)) {
+  # Define a common extent (could be from one raster or custom)
+  common_ext <- intersect(ext(wind_u), ext(water_u))
+  
+  # Crop both rasters to the same extent
+  water_u <- crop(water_u, common_ext)
+  wind_u  <- crop(wind_u, common_ext)
+  water_v <- crop(water_v, common_ext)
+  wind_v  <- crop(wind_v, common_ext)
+  
+  # Optional: align resolution and origin
+  # r2_crop <- resample(r2_crop, r1_crop, method = "bilinear")
+}
+```
+```{r plot-vectors}
+plot(water_u)
+plot(water_v)
+plot(wind_u)
+plot(wind_v)
 ```
 
 ```{r plot-vectors}
@@ -361,7 +389,7 @@ sim_param <- list(
   # "step"     = 60 * 60, # seconds per step 1 hr
   
   # value indicating every n-th time step that should be exported:
-  "plt_step" = 3, 
+  "plt_step" = 1, 
   
   # set direction of simulation
   "direct" = "fwd" # forward
@@ -453,8 +481,8 @@ steps <- switch(
 )
 
 ## start looping the simulation times
-# for (i in steps) {
-for (i in steps[1:16]) {
+for (i in steps) {
+# for (i in steps[1:2]) {
   # message(paste(i, "of", length(simulation_time)))
   print(paste(i, "of", length(simulation_time)))
   
@@ -730,15 +758,14 @@ for (i in steps[1:16]) {
       ) +
    
       coord_sf(
-        xlim = plot.xlim,
-        ylim = plot.ylim,
+        xlim = lat_lon[1:2],
+        ylim = lat_lon[3:4],
         expand = FALSE
         ) 
     )
 
     dev.off()
     
-    # out_list <- out_list + signs
   }
   
   
@@ -827,14 +854,19 @@ plotly::ggplotly(
 
 
 # ERA5 Wind Data from csv
+
+WS17282
+
+WS20342
 ```{r}
 wind_dir <- rstudioapi::selectDirectory()
 
-wind_path <- dir_ls(wind_dir) %>% 
+wind_path <- dir_ls(wind_dir, regexp = "WS17282|WS20342") %>% 
   print()
 ```
 
 ```{r}
+scale <- 0.5
 era_wind <- 
   wind_path[1] %>% 
   readr::read_csv(show_col_types = FALSE)
@@ -964,5 +996,41 @@ ggplot() +
   # # coord_cartesian(xlim = c(-7, 7), ylim = c(-7, 7)) +
   theme()
   
+```
+
+
+```{r}
+era_u10_m_s <-
+  select(era_wind, longitude, latitude, datetime_utc, "north_u10_m_s" = u10_m_s) %>% 
+  tidyr::nest(.by = datetime_utc) %$%
+  map2(
+    .x = datetime_utc,
+    .y = data,
+    \(.x, .y) {
+      x_rast <-  tidyterra::as_spatraster(.y)
+      time(x_rast) <- .x
+      return(x_rast)
+    }
+  ) %>% 
+  rast()
+
+era_u10_m_s
+plot(era_u10_m_s)
+
+era_v10_m_s <-
+  select(era_wind, longitude, latitude, datetime_utc, "east_v10_m_s" = v10_m_s) %>% 
+  tidyr::nest(.by = datetime_utc) %$%
+  map2(
+    .x = datetime_utc,
+    .y = data,
+    \(.x, .y) {
+      x_rast <-  tidyterra::as_spatraster(.y)
+      time(x_rast) <- .x
+      return(x_rast)
+    }
+  ) %>% 
+  rast()
+
+
 ```
 
