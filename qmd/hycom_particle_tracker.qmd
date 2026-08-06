@@ -45,13 +45,65 @@ path_save <- here("data", "raw", "hycom_particle_tracking")
 
 fs::dir_create(path_save)
 
-plot_out_path <- here("data", "plots", "hycom_particle_tracker", Sys.Date())
-plot_out_path <- here("data", "plots", "hycom_particle_tracker", paste0("keys_", Sys.Date()))
 
-fs::dir_create(plot_out_path)
 ```
 
 ## 2.2 Dataset Path
+
+# ERA5 Wind Data from csv
+
+WS17282
+
+WS20342
+```{r}
+wind_dir <- rstudioapi::selectDirectory()
+
+wind_path <- dir_ls(wind_dir) %>% 
+  str_subset("WS17282|WS20342", negate = TRUE) %>% 
+  print()
+cruise_num <- 1
+```
+
+```{r}
+if (T) {
+  
+  era_wind <- 
+    wind_path[cruise_num] %>% 
+    readr::read_csv(show_col_types = FALSE, n_max = 1) %T>% 
+    {
+      path_prefix <<- pull(., cruise_id)
+      print(path_prefix)
+    } %>% 
+    select(requested_start_7d_before, requested_end_7d_after) %>% 
+    unlist(use.names =  FALSE) %>% 
+    as.Date(origin = "1970-01-01")
+  era_wind
+  
+  months <- c(era_wind[1], era_wind[2])
+} else {
+  
+  path_prefix <- NULL
+  
+  months <- c(
+    as_date("2017-10-01"), 
+    as_date("2017-10-31")
+    )
+}
+
+print(months)
+
+# plot_out_path <- here("data", "plots", "hycom_particle_tracker", Sys.Date())
+plot_out_path <- here(
+  "data", "plots", "hycom_particle_tracker", 
+  paste0(c(path_prefix, format(Sys.Date(), "%Y_%m_%d")), collapse = "_")
+  )
+
+print(basename(plot_out_path))
+fs::dir_create(plot_out_path)
+
+```
+
+
 
 ```{r}
 # hycom cloud storage
@@ -80,11 +132,31 @@ hycom_filt_path <-
       # as_date("2017-10-12") + days(5)
       # as_date("2017-10-01"), 
       # as_date("2017-10-31")
-      min(era_wind$date_utc), 
-      max(era_wind$date_utc)
+      months[1],
+      months[2]
       )
   ) %T>%
   print()
+```
+
+```{r}
+traj_req_loc <- NULL
+if (T) {
+  
+traj_req_loc <- 
+  here("data", "raw") %>% 
+  dir_ls(regexp = "trajectory_request") %>% 
+  readxl::read_xlsx(sheet = "Backward_Keys_11") %>% 
+  filter(
+    between(sampling_start, months[1], months[2])
+  ) %>% 
+  print()
+
+traj_req_loc <- list(
+  "lat" = traj_req_loc$latitude,
+  "lon" = traj_req_loc$longitude
+  )
+}
 ```
 
 
@@ -213,35 +285,37 @@ water_time <- temp$z
 rm(temp)
 
 # ## Read the wind data:
-# temp       <- 
-#   here(path_save) %>%
-#   fs::dir_ls(regexp = dataset_id_wind) %>%
-#   .[[1]] %>%
-#   read_mover("northward_wind", "eastward_wind")
-# 
-# wind_u     <- temp$u
-# wind_v     <- temp$v
-# wind_time  <- temp$z
+temp <-
+  here(path_save) %>%
+  fs::dir_ls(regexp = dataset_id_wind) %>%
+  str_subset(as.character(months[1])) %>% 
+  read_mover("northward_wind", "eastward_wind")
+
+wind_u     <- temp$u
+wind_v     <- temp$v
+wind_time  <- temp$z
+rm(temp)
+
+# wind_u     <- era_u10_m_s
+# wind_v     <- era_v10_m_s
+# wind_time  <- time(era_u10_m_s)
 # rm(temp)
 
-wind_u     <- era_u10_m_s
-wind_v     <- era_v10_m_s
-wind_time  <- time(era_u10_m_s)
-# rm(temp)
-
-if (ext(wind_u) != ext(water_u)) {
-  # Define a common extent (could be from one raster or custom)
-  common_ext <- intersect(ext(wind_u), ext(water_u))
-  
-  # Crop both rasters to the same extent
-  water_u <- crop(water_u, common_ext)
-  wind_u  <- crop(wind_u, common_ext)
-  water_v <- crop(water_v, common_ext)
-  wind_v  <- crop(wind_v, common_ext)
-  
-  # Optional: align resolution and origin
-  # r2_crop <- resample(r2_crop, r1_crop, method = "bilinear")
-}
+# if (ext(wind_u) != ext(water_u)) {
+#   
+#   message("Area of interest between water and wind do not intersect. Croping!")
+#   # Define a common extent (could be from one raster or custom)
+#   common_ext <- intersect(ext(wind_u), ext(water_u))
+#   
+#   # Crop both rasters to the same extent
+#   water_u <- crop(water_u, common_ext)
+#   wind_u  <- crop(wind_u, common_ext)
+#   water_v <- crop(water_v, common_ext)
+#   wind_v  <- crop(wind_v, common_ext)
+#   
+#   # Optional: align resolution and origin
+#   # r2_crop <- resample(r2_crop, r1_crop, method = "bilinear")
+# }
 ```
 
 ```{r plot-vectors}
@@ -347,9 +421,9 @@ rel_params <- list(
   #   0    # depth not used in simulation
   #   )
   "coords" = list( # location of particle start
-    "lon"   = c(-81.25, -82.6, -83), # lo
-    "lat"   = c(25.5, 24.2, 26),  
-    "depth" = c(0, 0, 0)   
+    "lon"   = c(traj_req_loc$lon, -81.25, -82.6, -83), # lo
+    "lat"   = c(traj_req_loc$lat, 25.5, 24.2, 26)#,  
+    # "depth" = c(0, 0, 0)   
     )
   ) %T>% 
   print()
@@ -360,7 +434,8 @@ base_plt +
     geom = "point",
     # data = rel_params$coords, 
     x = rel_params$coords$lon, y = rel_params$coords$lat,
-    color = "red", size = rel(2)
+    color = "red", 
+    size = rel(2)
   )
 
 ```
@@ -419,14 +494,14 @@ n_particles[is.na(n_particles)] <-
     n = 2 + sum(is.na(n_particles))
   )$y[c(-1, - (2 + sum(is.na(n_particles))))]
 
-n_particles           <- round(n_particles)
+n_particles <- round(n_particles)
 
 # create a SpatVector for the particles:
 particles <-
   data.frame(
     pos_x = rep(rel_params$coords$lon,  rel_params$num),
     pos_y = rep(rel_params$coords$lat,  rel_params$num),
-    pos_z = rep(rel_params$coords$depth,  rel_params$num),
+    # pos_z = rep(rel_params$coords$depth,  rel_params$num),
     id = rep(letters[seq(length(rel_params$coords$lon))], rel_params$num)
   ) %>%
   terra::vect(
@@ -715,7 +790,8 @@ for (i in steps) {
         name   = "Wind Speed", 
         breaks = seq(0, 20, 5),
         limits = c(0, 20),
-        oob    = scales::oob_squish
+        oob    = scales::oob_squish,
+        # guide = guide_legend(order = 1)
         ) +  
         
       ggnewscale::new_scale_color() +
@@ -733,6 +809,7 @@ for (i in steps) {
         breaks = seq(0, 3, 1),
         limits = c(0, 3),
         oob    = scales::oob_squish,
+        # guide = guide_legend(order = 2)
         )  +
       
       ggnewscale::new_scale_color() +
@@ -744,7 +821,10 @@ for (i in steps) {
         aes(color = part_id)
         ) +
       
-      scale_color_discrete(name = "ID") +  
+      scale_color_discrete(
+        name = "ID", 
+        guide = guide_legend(order = 1)
+        ) +  
         
       labs(
         title = paste(
@@ -766,23 +846,37 @@ for (i in steps) {
   
 }
 
-
+cruise_num <- cruise_num + 1
+if (cruise_num > length(wind_path)) {
+  stop("This is the last one")
+}
 ```
 ## STEP 8: Convert Figures into Video using `ffmpeg`
 
-```{r}
+```{r ffmpeg-save}
+particle_video_file <-
+  here(
+    dirname(plot_out_path), 
+    paste0(
+      c(
+        path_prefix,
+        "particle_n",
+        rel_params$num,
+        paste0(format(Sys.Date(), "%Y_%m_%d"), ".mp4")
+        ), 
+      collapse = "_"
+      )
+    )
+
 system2(
   here(ffmpeg_path),
   paste(
-    "-framerate 1 -i",
+    "-r 5 -i",
     here(plot_out_path, "out%03d.png"),
     "-c:v libx264 -pix_fmt yuv420p",
-    here(dirname(plot_out_path), paste0(
-      "particle_n_", rel_params$num, "_", format(Sys.Date(), "%Y_%m_%d"), ".mp4"
-      )
+    particle_video_file
     )
   )
-)
 
 
 
@@ -790,7 +884,7 @@ system2(
 
 ## STEP 9: Save Particle Trajectories
 
-```{r}
+```{r track-save}
 # save the resulting particle information:
 all_results <- 
   purrr::map(part_results, \(.x) sf::st_as_sf(.x)) %>% 
@@ -802,7 +896,17 @@ all_results <-
     lat  = st_coordinates(geometry)[,2],
     )
 
-readr::write_csv(all_results, here(dirname(plot_out_path), "particle_movement.csv"))
+
+readr::write_csv(
+  all_results,
+  here(
+    dirname(plot_out_path), 
+    paste(c(
+      path_prefix,
+      paste0("particle_movement_", format(Sys.Date(), "%Y_%m_%d"),".csv")), 
+      collapse = "_")
+    )
+  )
 ```
 
 
@@ -1027,5 +1131,19 @@ era_v10_m_s <-
   rast()
 
 
+```
+
+
+
+```{r}
+path_prefix <- "dadfad"
+here(dirname(plot_out_path), paste0(paste0(
+  c(
+    cruise_id,
+    "particle_n",
+    rel_params$num,
+    format(Sys.Date(), "%Y_%m_%d")
+  ), collapse = "_"
+), ".mp4"))
 ```
 
