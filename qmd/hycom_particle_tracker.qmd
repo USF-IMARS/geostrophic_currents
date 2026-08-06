@@ -59,7 +59,7 @@ WS20342
 wind_dir <- rstudioapi::selectDirectory()
 
 wind_path <- dir_ls(wind_dir) %>% 
-  str_subset("WS17282|WS20342", negate = TRUE) %>% 
+  # str_subset("WS17282|WS20342", negate = TRUE) %>% 
   print()
 cruise_num <- 1
 ```
@@ -95,7 +95,7 @@ print(months)
 # plot_out_path <- here("data", "plots", "hycom_particle_tracker", Sys.Date())
 plot_out_path <- here(
   "data", "plots", "hycom_particle_tracker", 
-  paste0(c(path_prefix, format(Sys.Date(), "%Y_%m_%d")), collapse = "_")
+  paste0(c(path_prefix, "bck" ,format(Sys.Date(), "%Y_%m_%d")), collapse = "_")
   )
 
 print(basename(plot_out_path))
@@ -151,6 +151,8 @@ traj_req_loc <-
     between(sampling_start, months[1], months[2])
   ) %>% 
   print()
+
+end_date <- traj_req_loc$sampling_date
 
 traj_req_loc <- list(
   "lat" = traj_req_loc$latitude,
@@ -404,6 +406,7 @@ rel_params <- list(
   
    # time at which the simulated release should end:
   "end"    = as.POSIXct(as_datetime(months[1]) + days(1), tz = "UTC"),
+  # "end"    = as.POSIXct(end_date + days(1), tz = "UTC"),
   
   # number of particles to release in total:
   # "num"    = 10,
@@ -449,7 +452,8 @@ sim_param <- list(
   "start"    = as.POSIXct(as_datetime(months[1]), tz = "UTC"),
   
   # time at which the simulation should stop:
-  "end"      = as.POSIXct(as_datetime(months[2]), tz = "UTC"), # end
+  # "end"      = as.POSIXct(as_datetime(months[2]), tz = "UTC"), # end
+  "end"      = as.POSIXct(end_date + days(1), tz = "UTC"), # end
   # "end"      = as.POSIXct(as_datetime(months[1]) + days(2), tz = "UTC"), # end
   
   # time step of simulation in seconds:
@@ -462,8 +466,8 @@ sim_param <- list(
   "plt_step" = 1, 
   
   # set direction of simulation
-  "direct" = "fwd" # forward
-  # "direct" = "bck" # backward
+  # "direct" = "fwd" # forward
+  "direct" = "bck" # backward
 ) %T>% 
   print()
 
@@ -495,6 +499,13 @@ n_particles[is.na(n_particles)] <-
   )$y[c(-1, - (2 + sum(is.na(n_particles))))]
 
 n_particles <- round(n_particles)
+
+# set direction of particle disbursement
+n_particles <- switch(
+  sim_param$direct,
+  "fwd" = n_particles,
+  "bck" = rev(n_particles)
+)
 
 # create a SpatVector for the particles:
 particles <-
@@ -540,7 +551,7 @@ signs <- switch(
 out_list <- switch(
   sim_param$direct,
   "fwd" = 0,
-  "bck" = length(which(((seq(length(simulation_time)))- 1) %% 3 == 0)) + 1
+  "bck" = length(which(((seq(length(simulation_time)))- 1) %% sim_param$plt_step == 0)) + 1
 )
 
 # set direction of time steps
@@ -847,7 +858,7 @@ for (i in steps) {
 }
 
 cruise_num <- cruise_num + 1
-if (cruise_num > length(wind_path)) {
+if (cruise_num > length - 1) {
   stop("This is the last one")
 }
 ```
@@ -862,6 +873,7 @@ particle_video_file <-
         path_prefix,
         "particle_n",
         rel_params$num,
+        sim_param$direct,
         paste0(format(Sys.Date(), "%Y_%m_%d"), ".mp4")
         ), 
       collapse = "_"
@@ -903,6 +915,7 @@ readr::write_csv(
     dirname(plot_out_path), 
     paste(c(
       path_prefix,
+      sim_param$direct,
       paste0("particle_movement_", format(Sys.Date(), "%Y_%m_%d"),".csv")), 
       collapse = "_")
     )
