@@ -152,7 +152,7 @@ traj_req_loc <-
   ) %>% 
   print()
 
-end_date <- traj_req_loc$sampling_date
+end_date <- max(traj_req_loc$sampling_date)
 
 traj_req_loc <- list(
   "lat" = traj_req_loc$latitude,
@@ -858,7 +858,7 @@ for (i in steps) {
 }
 
 cruise_num <- cruise_num + 1
-if (cruise_num > length - 1) {
+if (cruise_num > length(wind_path) - 1) {
   stop("This is the last one")
 }
 ```
@@ -883,7 +883,7 @@ particle_video_file <-
 system2(
   here(ffmpeg_path),
   paste(
-    "-r 5 -i",
+    "-r 2 -i",
     here(plot_out_path, "out%03d.png"),
     "-c:v libx264 -pix_fmt yuv420p",
     particle_video_file
