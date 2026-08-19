@@ -51,10 +51,12 @@ fs::dir_create(path_save)
 ## 2.2 Dataset Path
 
 # ERA5 Wind Data from csv
+Box > Surface Maps > hourly wind
 
 WS17282
 
 WS20342
+
 ```{r}
 wind_dir <- rstudioapi::selectDirectory()
 
@@ -95,6 +97,61 @@ print(months)
 # plot_out_path <- here("data", "plots", "hycom_particle_tracker", Sys.Date())
 plot_out_path <- here(
   "data", "plots", "hycom_particle_tracker", 
+  paste0(c(path_prefix, "bck", format(Sys.Date(), "%Y_%m_%d")), collapse = "_")
+  )
+
+print(basename(plot_out_path))
+fs::dir_create(plot_out_path)
+
+```
+```{r}
+traj_req_loc_temp <- 
+  here("data", "raw") %>% 
+  dir_ls(regexp = "trajectory_request") %>% 
+  readxl::read_xlsx(sheet = "Backward_Keys_11") %>% 
+  tidyr::nest(.by = cruise_id) 
+
+cruise_num <- 1
+```
+
+
+```{r}
+traj_req_loc <- 
+  slice(traj_req_loc_temp, cruise_num) %>% 
+  tidyr::unnest(data) %>%
+  {
+    path_prefix <<- pull(., cruise_id)
+    print(path_prefix)
+    .
+    }
+
+months <- 
+  c(
+    traj_req_loc$sampling_start2,
+    traj_req_loc$sampling_end2
+    ) %>% 
+  unique() %>% 
+  as_date()
+
+# %>% 
+#   filter(
+#     between(sampling_start, months[1], months[2])
+#   ) %>% 
+#   print()
+
+end_date <- max(traj_req_loc$sampling_date)
+
+traj_req_loc <- list(
+  "lat" = traj_req_loc$latitude,
+  "lon" = traj_req_loc$longitude,
+  "time_sample" = traj_req_loc$particle_initial_time_utc
+  )
+
+
+
+# plot_out_path <- here("data", "plots", "hycom_particle_tracker", Sys.Date())
+plot_out_path <- here(
+  "data", "plots", "hycom_particle_tracker", 
   paste0(c(path_prefix, "bck" ,format(Sys.Date(), "%Y_%m_%d")), collapse = "_")
   )
 
@@ -104,13 +161,13 @@ fs::dir_create(plot_out_path)
 ```
 
 
-
 ```{r}
 # hycom cloud storage
 hycom_path <- 
-  here(cloud_dir, "data", "raw", "hycom") %>%
+  # here(cloud_dir, "data", "raw", "hycom") %>%
+  here(cloud_dir, "data", "raw", "hycom_cruise_select") %>%
   dir_ls() %>%
-  dir_ls() %>% 
+  # dir_ls() %>% 
   dir_ls(regexp = "\\.nc") %T>% {
     print(length(.))
     sample(., 10) %>% print()
@@ -140,25 +197,25 @@ hycom_filt_path <-
 ```
 
 ```{r}
-traj_req_loc <- NULL
-if (T) {
-  
-traj_req_loc <- 
-  here("data", "raw") %>% 
-  dir_ls(regexp = "trajectory_request") %>% 
-  readxl::read_xlsx(sheet = "Backward_Keys_11") %>% 
-  filter(
-    between(sampling_start, months[1], months[2])
-  ) %>% 
-  print()
-
-end_date <- max(traj_req_loc$sampling_date)
-
-traj_req_loc <- list(
-  "lat" = traj_req_loc$latitude,
-  "lon" = traj_req_loc$longitude
-  )
-}
+# traj_req_loc <- NULL
+# if (T) {
+#   
+# traj_req_loc <- 
+#   here("data", "raw") %>% 
+#   dir_ls(regexp = "trajectory_request") %>% 
+#   readxl::read_xlsx(sheet = "Backward_Keys_11") %>% 
+#   filter(
+#     between(sampling_start, months[1], months[2])
+#   ) %>% 
+#   print()
+# 
+# end_date <- max(traj_req_loc$sampling_date)
+# 
+# traj_req_loc <- list(
+#   "lat" = traj_req_loc$latitude,
+#   "lon" = traj_req_loc$longitude
+#   )
+# }
 ```
 
 
@@ -425,7 +482,9 @@ rel_params <- list(
   #   )
   "coords" = list( # location of particle start
     "lon"   = c(traj_req_loc$lon, -81.25, -82.6, -83), # lo
-    "lat"   = c(traj_req_loc$lat, 25.5, 24.2, 26)#,  
+    "lat"   = c(traj_req_loc$lat, 25.5, 24.2, 26)#,
+    # "lon"   = c(traj_req_loc$lon), # lo
+    # "lat"   = c(traj_req_loc$lat)  # lat  
     # "depth" = c(0, 0, 0)   
     )
   ) %T>% 
@@ -858,7 +917,8 @@ for (i in steps) {
 }
 
 cruise_num <- cruise_num + 1
-if (cruise_num > length(wind_path) - 1) {
+# if (cruise_num > length(wind_path) - 1) {
+if (cruise_num > nrow(traj_req_loc_temp) - 1) {
   stop("This is the last one")
 }
 ```
