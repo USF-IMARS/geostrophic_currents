@@ -605,13 +605,13 @@ for (i in steps) {
   }
   
   ## displace particles with *wind*
-  part_coords[seq(0, n_particles[i]),] <- 
-    part_coords[seq(0, n_particles[i]),] +
-    sim_param[["step"]] * drift_factor * 
-    cbind(
-      "x" = terra::extract(twin_u, previous_position, method = "bilinear", ID = FALSE)[, 1],
-      "y" = terra::extract(twin_v, previous_position, method = "bilinear", ID = FALSE)[, 1]
-      )[seq(0, n_particles[i]), ]
+  # part_coords[seq(0, n_particles[i]),] <- 
+  #   part_coords[seq(0, n_particles[i]),] +
+  #   sim_param[["step"]] * drift_factor * 
+  #   cbind(
+  #     "x" = terra::extract(twin_u, previous_position, method = "bilinear", ID = FALSE)[, 1],
+  #     "y" = terra::extract(twin_v, previous_position, method = "bilinear", ID = FALSE)[, 1]
+  #     )[seq(0, n_particles[i]), ]
   
 
   if (any(is.nan(part_coords))) {
@@ -759,21 +759,21 @@ for (i in steps) {
         )
 
     # extract wind speed x, y and magnitude
-    win_arrow <- 
-      dplyr::left_join(
-        as.data.frame(wind_u[[tsel_w]], xy = TRUE),
-        as.data.frame(wind_v[[tsel_w]], xy = TRUE) 
-      ) %>%
-      rename(
-        "north" = contains("north"),
-        "east"  = contains("east")
-      ) %>%
-      mutate(
-        mag   = sqrt(north^2 + east^2),
-        north = north * scale,
-        east  = east * scale,
-        time  = time_step
-        )
+    # win_arrow <- 
+    #   dplyr::left_join(
+    #     as.data.frame(wind_u[[tsel_w]], xy = TRUE),
+    #     as.data.frame(wind_v[[tsel_w]], xy = TRUE) 
+    #   ) %>%
+    #   rename(
+    #     "north" = contains("north"),
+    #     "east"  = contains("east")
+    #   ) %>%
+    #   mutate(
+    #     mag   = sqrt(north^2 + east^2),
+    #     north = north * scale,
+    #     east  = east * scale,
+    #     time  = time_step
+    #     )
     
     # create image file
     png(
@@ -788,23 +788,23 @@ for (i in steps) {
     print( 
       base_plt +
         
-      # wind
-      metR::geom_arrow(
-        data    = win_arrow,
-        mapping = aes(x = x, dx = north, y = y, dy = east, color = mag),
-        alpha   = 0.75,
-        skip    = 1,
-        size    = 0.5, # adjust arrow thickness
-        na.rm   = TRUE
-        ) +
-      scale_color_viridis_c(
-        name   = "Wind Speed", 
-        breaks = seq(0, 20, 5),
-        limits = c(0, 20),
-        oob    = scales::oob_squish,
-        # guide = guide_legend(order = 1)
-        ) +  
-        
+      # # wind
+      # metR::geom_arrow(
+      #   data    = win_arrow,
+      #   mapping = aes(x = x, dx = north, y = y, dy = east, color = mag),
+      #   alpha   = 0.75,
+      #   skip    = 1,
+      #   size    = 0.5, # adjust arrow thickness
+      #   na.rm   = TRUE
+      #   ) +
+      # scale_color_viridis_c(
+      #   name   = "Wind Speed", 
+      #   breaks = seq(0, 20, 5),
+      #   limits = c(0, 20),
+      #   oob    = scales::oob_squish,
+      #   # guide = guide_legend(order = 1)
+      #   ) +  
+      #   
       ggnewscale::new_scale_color() +
       
       # water  
