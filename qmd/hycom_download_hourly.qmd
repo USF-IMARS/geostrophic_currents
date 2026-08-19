@@ -90,6 +90,10 @@ source(here("R", "aviso_functions.R"))
 ## 2.2 Cruise Dates
 
 ```{r ctd-dates}
+# hour to extract 0 - 23
+hours_of_day <- c(12)
+hours_of_day <- c(0:23)
+
 traj_req_loc <-
   here(cloud_dir, "hycom_vid_img", "particle_tracker") %>% 
   dir_ls(regexp = "trajectory_request") %>% 
@@ -291,10 +295,13 @@ if (!file_exists(hycom_info)) {
             tibble(file = .file, day = .) %>%
             mutate(
               day_yr = str_extract(day, "\\d{4}_\\d{3}"),
-              day_yr = as_date(day_yr, format = "%Y_%j")
+              day_yr = as_date(day_yr, format = "%Y_%j"),
+              hour = str_extract(day, "(\\d{2})_3z\\.nc", group = 1),
+              hour = as.numeric(hour)
             ) %>%
             filter(
-              day_yr %in% as_date(all_dates)
+              day_yr %in% as_date(all_dates),
+              hour %in% hours_of_day
             ) %>%
             mutate(
               part_url = str_extract(file, "datasets/GO.*"),
