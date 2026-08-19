@@ -93,6 +93,7 @@ source(here("R", "aviso_functions.R"))
 traj_req_loc <-
   here(cloud_dir, "hycom_vid_img", "particle_tracker") %>% 
   dir_ls(regexp = "trajectory_request") %>% 
+  str_subset("~", negate = TRUE) %>%
   readxl::read_xlsx(sheet = "Backward_Keys_11") %>% 
   select(cruise_id, sampling_start2, sampling_end2, particle_initial_time_utc) %>%
   mutate(
@@ -100,8 +101,8 @@ traj_req_loc <-
     dwnld_strt = min(sampling_start2),
     dwnld_end = min(sampling_end2),
   ) %>%
-  filter(cruise_id == "WS1018"
-  #   between(sampling_start, months[1], months[2])
+  filter(
+    # cruise_id == "WS1018"
   ) %>%
   print()
 
