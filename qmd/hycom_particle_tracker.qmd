@@ -45,7 +45,22 @@ path_save <- here("data", "raw", "hycom_particle_tracking")
 
 fs::dir_create(path_save)
 
+# Function to round to nearest 6-hour mark
+nearest_hr <- function(time, hours = 6, direction = "closest") {
+  # Convert to numeric seconds since epoch
+  secs <- as.numeric(time)
+  # 6 hours in seconds
+  round_hours <- hours * 3600
+  # Round to nearest multiple of 6 hours
+  rounded_secs <- switch (direction,
+    "closest" = round(secs / round_hours) * round_hours,
+    "up"      = ceiling(secs / round_hours) * round_hours,
+    "down"    = floor(secs / round_hours) * round_hours,
+  )
 
+  # Convert back to POSIXct
+  as.POSIXct(rounded_secs, origin = "1970-01-01", tz = tz(time))
+}
 ```
 
 ## 2.2 Dataset Path
@@ -58,53 +73,56 @@ WS17282
 WS20342
 
 ```{r}
-wind_dir <- rstudioapi::selectDirectory()
-
-wind_path <- dir_ls(wind_dir) %>% 
-  # str_subset("WS17282|WS20342", negate = TRUE) %>% 
-  print()
-cruise_num <- 1
+# wind_dir <- rstudioapi::selectDirectory()
+# 
+# wind_path <- dir_ls(wind_dir) %>% 
+#   # str_subset("WS17282|WS20342", negate = TRUE) %>% 
+#   print()
+# cruise_num <- 1
 ```
 
 ```{r}
-if (T) {
-  
-  era_wind <- 
-    wind_path[cruise_num] %>% 
-    readr::read_csv(show_col_types = FALSE, n_max = 1) %T>% 
-    {
-      path_prefix <<- pull(., cruise_id)
-      print(path_prefix)
-    } %>% 
-    select(requested_start_7d_before, requested_end_7d_after) %>% 
-    unlist(use.names =  FALSE) %>% 
-    as.Date(origin = "1970-01-01")
-  era_wind
-  
-  months <- c(era_wind[1], era_wind[2])
-} else {
-  
-  path_prefix <- NULL
-  
-  months <- c(
-    as_date("2017-10-01"), 
-    as_date("2017-10-31")
-    )
-}
-
-print(months)
-
-# plot_out_path <- here("data", "plots", "hycom_particle_tracker", Sys.Date())
-plot_out_path <- here(
-  "data", "plots", "hycom_particle_tracker", 
-  paste0(c(path_prefix, "bck", format(Sys.Date(), "%Y_%m_%d")), collapse = "_")
-  )
-
-print(basename(plot_out_path))
-fs::dir_create(plot_out_path)
+# if (T) {
+#   
+#   era_wind <- 
+#     wind_path[cruise_num] %>% 
+#     readr::read_csv(show_col_types = FALSE, n_max = 1) %T>% 
+#     {
+#       path_prefix <<- pull(., cruise_id)
+#       print(path_prefix)
+#     } %>% 
+#     select(requested_start_7d_before, requested_end_7d_after) %>% 
+#     unlist(use.names =  FALSE) %>% 
+#     as.Date(origin = "1970-01-01")
+#   era_wind
+#   
+#   months <- c(era_wind[1], era_wind[2])
+# } else {
+#   
+#   path_prefix <- NULL
+#   
+#   months <- c(
+#     as_date("2017-10-01"), 
+#     as_date("2017-10-31")
+#     )
+# }
+# 
+# print(months)
+# 
+# # plot_out_path <- here("data", "plots", "hycom_particle_tracker", Sys.Date())
+# plot_out_path <- here(
+#   "data", "plots", "hycom_particle_tracker", 
+#   paste0(c(path_prefix, "bck", format(Sys.Date(), "%Y_%m_%d")), collapse = "_")
+#   )
+# 
+# print(basename(plot_out_path))
+# fs::dir_create(plot_out_path)
 
 ```
-```{r}
+
+
+
+```{r load-particle-time-loc}
 traj_req_loc_temp <- 
   here("data", "raw") %>% 
   dir_ls(regexp = "trajectory_request") %>% 
@@ -115,7 +133,7 @@ cruise_num <- 1
 ```
 
 
-```{r}
+```{r filter-cruise}
 traj_req_loc <- 
   slice(traj_req_loc_temp, cruise_num) %>% 
   tidyr::unnest(data) %>%
@@ -131,15 +149,13 @@ months <-
     traj_req_loc$sampling_end2
     ) %>% 
   unique() %>% 
-  as_date()
+  as_date() %>% 
+  range()
+months
 
-# %>% 
-#   filter(
-#     between(sampling_start, months[1], months[2])
-#   ) %>% 
-#   print()
-
-end_date <- max(traj_req_loc$sampling_date)
+# end_date <- max(traj_req_loc$sampling_date)
+end_date <- max(nearest_hr(traj_req_loc$particle_initial_time_utc, direction = "up"))
+end_date
 
 traj_req_loc <- list(
   "lat" = traj_req_loc$latitude,
@@ -147,21 +163,19 @@ traj_req_loc <- list(
   "time_sample" = traj_req_loc$particle_initial_time_utc
   )
 
-
-
-# plot_out_path <- here("data", "plots", "hycom_particle_tracker", Sys.Date())
 plot_out_path <- here(
-  "data", "plots", "hycom_particle_tracker", 
-  paste0(c(path_prefix, "bck" ,format(Sys.Date(), "%Y_%m_%d")), collapse = "_")
+  "data", "plots", "hycom_particle_tracker", format(Sys.Date(), "%Y_%m_%d"),
+  paste0(c(path_prefix, "bck", format(Sys.Date(), "%Y_%m_%d")), collapse = "_")
   )
 
 print(basename(plot_out_path))
+dir_create(dirname(plot_out_path))
 fs::dir_create(plot_out_path)
 
 ```
 
 
-```{r}
+```{r filter-hycom-data}
 # hycom cloud storage
 hycom_path <- 
   # here(cloud_dir, "data", "raw", "hycom") %>%
@@ -194,32 +208,7 @@ hycom_filt_path <-
       )
   ) %T>%
   print()
-```
 
-```{r}
-# traj_req_loc <- NULL
-# if (T) {
-#   
-# traj_req_loc <- 
-#   here("data", "raw") %>% 
-#   dir_ls(regexp = "trajectory_request") %>% 
-#   readxl::read_xlsx(sheet = "Backward_Keys_11") %>% 
-#   filter(
-#     between(sampling_start, months[1], months[2])
-#   ) %>% 
-#   print()
-# 
-# end_date <- max(traj_req_loc$sampling_date)
-# 
-# traj_req_loc <- list(
-#   "lat" = traj_req_loc$latitude,
-#   "lon" = traj_req_loc$longitude
-#   )
-# }
-```
-
-
-```{r load-data}
 lat_lon <- 
   c(
     # long
@@ -260,36 +249,41 @@ Variables:
   - northward_wind - Northward wind [m/s]
 
 ```{r wind-vel-params}
-# set to TRUE if downloading data
-download <- FALSE
-download <- TRUE
-
-# set to TRUE if want to overwrite previous data
-overwrite <- FALSE
-# overwrite <- TRUE
-
-# dataset id
-dataset_id_wind <- "cmems_obs-wind_glo_phy_my_l4_0.125deg_PT1H"
-
-# select vars
-vars <-
-  c(
-    "eastward_wind",
-    "northward_wind"
+if (FALSE) {
+    
+  # set to TRUE if downloading data
+  download <- FALSE
+  download <- TRUE
+  
+  # set to TRUE if want to overwrite previous data
+  overwrite <- FALSE
+  # overwrite <- TRUE
+  
+  # dataset id
+  dataset_id_wind <- "cmems_obs-wind_glo_phy_my_l4_0.125deg_PT1H"
+  
+  # select vars
+  vars <-
+    c(
+      "eastward_wind",
+      "northward_wind"
+    )
+  
+  cat("Date Range: ", format(months[c(1, length(months))], "%B %Y"), sep = "\n- ")
+  
+  aviso_download(
+    months[1], 
+    vars, 
+    bounds     = lat_lon,
+    path_copernicusmarine,
+    dataset_id = dataset_id_wind,
+    path_save  = path_save,
+    download,
+    overwrite
   )
-
-cat("Date Range: ", format(months[c(1, length(months))], "%B %Y"), sep = "\n- ")
-
-aviso_download(
-  months[1], 
-  vars, 
-  bounds     = lat_lon,
-  path_copernicusmarine,
-  dataset_id = dataset_id_wind,
-  path_save  = path_save,
-  download,
-  overwrite
-)
+} else {
+  message("Skipping wind download.")
+}
 ```
 # 3.0 Particle Tracker
 
@@ -328,6 +322,7 @@ extend_data <- function(r, band = 21) {
     na.policy = "only"
   )
 }
+
 ```
 
 ## STEP 2: Load Currents and Wind Data
@@ -344,16 +339,21 @@ water_time <- temp$z
 rm(temp)
 
 # ## Read the wind data:
-temp <-
-  here(path_save) %>%
-  fs::dir_ls(regexp = dataset_id_wind) %>%
-  str_subset(as.character(months[1])) %>% 
-  read_mover("northward_wind", "eastward_wind")
-
-wind_u     <- temp$u
-wind_v     <- temp$v
-wind_time  <- temp$z
-rm(temp)
+if (FALSE) {
+  
+  temp <-
+    here(path_save) %>%
+    fs::dir_ls(regexp = dataset_id_wind) %>%
+    str_subset(as.character(months[1])) %>% 
+    read_mover("northward_wind", "eastward_wind")
+  
+  wind_u     <- temp$u
+  wind_v     <- temp$v
+  wind_time  <- temp$z
+  rm(temp)
+} else {
+  message("Skipping loading of wind data.")
+}
 
 # wind_u     <- era_u10_m_s
 # wind_v     <- era_v10_m_s
@@ -380,8 +380,8 @@ rm(temp)
 ```{r plot-vectors}
 plot(water_u)
 plot(water_v)
-plot(wind_u)
-plot(wind_v)
+# plot(wind_u)
+# plot(wind_v)
 ```
 
 
@@ -389,66 +389,71 @@ plot(wind_v)
 ## STEP 3: Crop and Create Land Mask
 
 ```{r country-download}
-## Countries for which the shorelines are downloaded and plotted
-countries <- c("USA", "Cuba", "Bahamas")
-
-gd_load <- lapply(
-  as.list(countries),
-  function(x) {
-    gadm <- ""
-
-    gadm <- tryCatch(
-      geodata::gadm(country = x, level = 0, path = tempdir()),
-      error = function(e) NULL
-    )
-
-    gadm
-  }
-)
-
-scale <- 0.05
-aspect.ratio <- 1 / cos(mean(lat_lon[3:4]) * pi / 180)
+if (!exists("land_mask")) {
+  ## Countries for which the shorelines are downloaded and plotted
+  countries <- c("USA", "Cuba", "Bahamas")
+  
+  gd_load <- lapply(
+    as.list(countries),
+    function(x) {
+      gadm <- ""
+  
+      gadm <- tryCatch(
+        geodata::gadm(country = x, level = 0, path = tempdir()),
+        error = function(e) NULL
+      )
+  
+      gadm
+    }
+  )
+  
+  scale <- 0.05
+  aspect.ratio <- 1 / cos(mean(lat_lon[3:4]) * pi / 180)
+}
 ```
 
 
 ```{r country-combine}
-land_crop <- land_buff <- list()
-base_plt <-
-  ggplot() +
-  labs(x = NULL, y = NULL) +
-  coord_sf(
-    xlim = lat_lon[1:2],
-    ylim = lat_lon[3:4],
-    expand = FALSE
-    )  +
-  theme_bw()
-
-
-for (i in seq(length(gd_load))) {
-  land_crop[[i]] <- crop(gd_load[[i]], ext(water_u))
+if (!exists("land_mask")) {
   
-  # add land to figure
-  base_plt <- base_plt + geom_spatvector(data = land_crop[[i]])
+  land_crop <- land_buff <- list()
+  base_plt <-
+    ggplot() +
+    labs(x = NULL, y = NULL) +
+    coord_sf(
+      xlim = lat_lon[1:2],
+      ylim = lat_lon[3:4],
+      expand = FALSE
+      )  +
+    theme_bw()
   
-  # buffer around polygon
-  land_buff[[i]] <- buffer(land_crop[[i]], 1000) # meters
   
-}
-
-base_plt
-
-# combine all countries to one spatvector
-land_union <- purrr::reduce(land_buff, terra::union)
-
-# create raster with the same resolution as currents data
-land_mask <- rasterize(
-  land_union, 
-  rast(ext(water_u), resolution = res(water_u)), 
-  field = 1
-  ) 
-land_mask[is.na(land_mask)] <- 0
-
+  for (i in seq(length(gd_load))) {
+    land_crop[[i]] <- crop(gd_load[[i]], ext(water_u))
+    
+    # add land to figure
+    base_plt <- base_plt_og + geom_spatvector(data = land_crop[[i]])
+    
+    # buffer around polygon
+    land_buff[[i]] <- buffer(land_crop[[i]], 1000) # meters
+    
+  }
+  
+  base_plt
+  
+  # combine all countries to one spatvector
+  land_union <- purrr::reduce(land_buff, terra::union)
+  
+  # create raster with the same resolution as currents data
+  land_mask <- rasterize(
+    land_union, 
+    rast(ext(water_u), resolution = res(water_u)), 
+    field = 1
+    ) 
+  land_mask[is.na(land_mask)] <- 0
+  
 plot(land_mask)
+}
 ```
 
 
@@ -481,10 +486,10 @@ rel_params <- list(
   #   0    # depth not used in simulation
   #   )
   "coords" = list( # location of particle start
-    "lon"   = c(traj_req_loc$lon, -81.25, -82.6, -83), # lo
-    "lat"   = c(traj_req_loc$lat, 25.5, 24.2, 26)#,
-    # "lon"   = c(traj_req_loc$lon), # lo
-    # "lat"   = c(traj_req_loc$lat)  # lat  
+    # "lon"   = c(traj_req_loc$lon, -81.25, -82.6, -83), # lo
+    # "lat"   = c(traj_req_loc$lat, 25.5, 24.2, 26)#,
+    "lon"   = c(traj_req_loc$lon), # lo
+    "lat"   = c(traj_req_loc$lat)  # lat
     # "depth" = c(0, 0, 0)   
     )
   ) %T>% 
@@ -496,10 +501,10 @@ base_plt +
     geom = "point",
     # data = rel_params$coords, 
     x = rel_params$coords$lon, y = rel_params$coords$lat,
-    color = "red", 
+    color = "grey", 
+    alpha = 0.5,
     size = rel(2)
   )
-
 ```
 
 ## STEP 5: Specify Simulation Details
@@ -512,7 +517,8 @@ sim_param <- list(
   
   # time at which the simulation should stop:
   # "end"      = as.POSIXct(as_datetime(months[2]), tz = "UTC"), # end
-  "end"      = as.POSIXct(end_date + days(1), tz = "UTC"), # end
+  # "end"      = as.POSIXct(end_date + days(1), tz = "UTC"), # end
+  "end"      = as.POSIXct(end_date, tz = "UTC"), # end
   # "end"      = as.POSIXct(as_datetime(months[1]) + days(2), tz = "UTC"), # end
   
   # time step of simulation in seconds:
@@ -594,7 +600,7 @@ diffusion_coeff <- 1e5
 TODO: add coastline boundary
 TODO: add in if NA extract then replace with previous value
 
-```{r}
+```{r sim-run}
 # create a list in which results should be stored:
 part_results          <- list()
 previous_position     <- particles
@@ -626,17 +632,17 @@ for (i in steps) {
   # message(paste(i, "of", length(simulation_time)))
   print(paste(i, "of", length(simulation_time)))
   
-  # Get the water currents that are closest to the current simulation time
+  # Load the water currents that are closest to the current simulation time
   tdif   <- abs(water_time - simulation_time[i])
   tsel_c <- which(tdif == min(tdif))[[1]]
   twat_u <- extend_data(water_u[[tsel_c]]) * signs
   twat_v <- extend_data(water_v[[tsel_c]]) * signs
   
-  
-  tdif   <- abs(wind_time - simulation_time[i])
-  tsel_w <- which(tdif == min(tdif))[[1]]
-  twin_u <- extend_data(wind_u[[tsel_w]]) * signs
-  twin_v <- extend_data(wind_v[[tsel_w]]) * signs
+  # Load the wind spped that are closest to the current simulation time
+  # tdif   <- abs(wind_time - simulation_time[i])
+  # tsel_w <- which(tdif == min(tdif))[[1]]
+  # twin_u <- extend_data(wind_u[[tsel_w]]) * signs
+  # twin_v <- extend_data(wind_v[[tsel_w]]) * signs
 
   # Extract last known particle locations and transform coordinates into meters:
   # 1. transforms decimal degree to meters as matrix x, y coords
@@ -671,12 +677,12 @@ for (i in steps) {
   #     "x" = terra::extract(twin_u, previous_position, method = "bilinear", ID = FALSE)[, 1],
   #     "y" = terra::extract(twin_v, previous_position, method = "bilinear", ID = FALSE)[, 1]
   #     )[seq(0, n_particles[i]), ]
-  
-
-  if (any(is.nan(part_coords))) {
-    bad_rows <- unique(which(arr.ind = TRUE, is.nan(part_coords))[, 1])
-    part_coords[bad_rows, ] <- prev_coords[bad_rows,]
-   }
+  # 
+  # 
+  # if (any(is.nan(part_coords))) {
+  #   bad_rows <- unique(which(arr.ind = TRUE, is.nan(part_coords))[, 1])
+  #   part_coords[bad_rows, ] <- prev_coords[bad_rows,]
+  #  }
   
   # displace with *random walk* (diffusion):
   part_coords[0:n_particles[i],] <- 
@@ -881,7 +887,24 @@ for (i in steps) {
         oob    = scales::oob_squish,
         # guide = guide_legend(order = 2)
         )  +
+     
+      ggnewscale::new_scale_color() +
       
+      geom_point(
+        data = as_tibble(rel_params$coords) %>% 
+          mutate(id = letters[seq(length( rel_params$coords$lon))]),
+        aes(x = lon, y = lat, color = id),
+        alpha = 0.75,
+        size = rel(2),
+        shape = 4,
+        show.legend = FALSE
+        ) +
+        
+      scale_color_discrete(
+        name = "ID", 
+        guide = guide_legend(order = 1)
+        ) +  
+        
       ggnewscale::new_scale_color() +
       
       # particles  
@@ -916,18 +939,14 @@ for (i in steps) {
   
 }
 
-cruise_num <- cruise_num + 1
-# if (cruise_num > length(wind_path) - 1) {
-if (cruise_num > nrow(traj_req_loc_temp) - 1) {
-  stop("This is the last one")
-}
-```
-## STEP 8: Convert Figures into Video using `ffmpeg`
 
-```{r ffmpeg-save}
+
+## STEP 8: Convert Figures into Video using `ffmpeg` ----
+
 particle_video_file <-
   here(
     dirname(plot_out_path), 
+    "video",
     paste0(
       c(
         path_prefix,
@@ -939,6 +958,8 @@ particle_video_file <-
       collapse = "_"
       )
     )
+
+dir_create(dirname(particle_video_file))
 
 system2(
   here(ffmpeg_path),
@@ -952,11 +973,9 @@ system2(
 
 
 
-```
 
-## STEP 9: Save Particle Trajectories
+## STEP 9: Save Particle Trajectories ----
 
-```{r track-save}
 # save the resulting particle information:
 all_results <- 
   purrr::map(part_results, \(.x) sf::st_as_sf(.x)) %>% 
@@ -968,11 +987,14 @@ all_results <-
     lat  = st_coordinates(geometry)[,2],
     )
 
+here(dirname(plot_out_path), "particle_tracks") %>% 
+  dir_create()
 
 readr::write_csv(
   all_results,
   here(
     dirname(plot_out_path), 
+    "particle_tracks",
     paste(c(
       path_prefix,
       sim_param$direct,
@@ -980,6 +1002,12 @@ readr::write_csv(
       collapse = "_")
     )
   )
+
+cruise_num <- cruise_num + 1
+# if (cruise_num > length(wind_path) - 1) {
+if (cruise_num > nrow(traj_req_loc_temp) - 1) {
+  stop("This is the last one")
+}
 ```
 
 
