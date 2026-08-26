@@ -130,6 +130,9 @@ traj_req_loc_temp <-
   tidyr::nest(.by = cruise_id) 
 
 cruise_num <- 1
+
+# set direction of simulation
+fwd_bck <- c("fwd", "bck")[2]
 ```
 
 
@@ -165,7 +168,7 @@ traj_req_loc <- list(
 
 plot_out_path <- here(
   "data", "plots", "hycom_particle_tracker", format(Sys.Date(), "%Y_%m_%d"),
-  paste0(c(path_prefix, "bck", format(Sys.Date(), "%Y_%m_%d")), collapse = "_")
+  paste0(c(path_prefix, fwd_bck, format(Sys.Date(), "%Y_%m_%d")), collapse = "_")
   )
 
 print(basename(plot_out_path))
@@ -432,14 +435,14 @@ if (!exists("land_mask")) {
     land_crop[[i]] <- crop(gd_load[[i]], ext(water_u))
     
     # add land to figure
-    base_plt <- base_plt_og + geom_spatvector(data = land_crop[[i]])
+    base_plt <- base_plt + geom_spatvector(data = land_crop[[i]])
     
     # buffer around polygon
     land_buff[[i]] <- buffer(land_crop[[i]], 1000) # meters
     
   }
   
-  base_plt
+  print(base_plt)
   
   # combine all countries to one spatvector
   land_union <- purrr::reduce(land_buff, terra::union)
@@ -452,7 +455,7 @@ if (!exists("land_mask")) {
     ) 
   land_mask[is.na(land_mask)] <- 0
   
-plot(land_mask)
+  plot(land_mask)
 }
 ```
 
@@ -467,7 +470,7 @@ rel_params <- list(
   "start"  = as.POSIXct(as_datetime(months[1]), tz = "UTC"),
   
    # time at which the simulated release should end:
-  "end"    = as.POSIXct(as_datetime(months[1]) + days(1), tz = "UTC"),
+  "end"    = as.POSIXct(as_datetime(months[1]) + days(4), tz = "UTC"),
   # "end"    = as.POSIXct(end_date + days(1), tz = "UTC"),
   
   # number of particles to release in total:
@@ -501,7 +504,7 @@ base_plt +
     geom = "point",
     # data = rel_params$coords, 
     x = rel_params$coords$lon, y = rel_params$coords$lat,
-    color = "grey", 
+    color = "red", 
     alpha = 0.5,
     size = rel(2)
   )
@@ -510,6 +513,12 @@ base_plt +
 ## STEP 5: Specify Simulation Details
 
 ```{r simulation-param}
+# time step interval 
+# note: fractions represent fraction of hours
+# hr <- 6 # 6 hour
+# hr <- 0.25 # 0.25 hour
+hr <- 1 # 1 hour
+
 # time at which the simulation should start and end:
 sim_param <- list(
   # time at which the simulation should start:
@@ -522,17 +531,13 @@ sim_param <- list(
   # "end"      = as.POSIXct(as_datetime(months[1]) + days(2), tz = "UTC"), # end
   
   # time step of simulation in seconds:
-  # "step"     = 60 * 60 / 4, # seconds per step 0.25 hr
-  "step"     = 60 * 60 * 6, # seconds per step 6 hr
-  # "step"     = 60 * 60 * 3, # seconds per step 3 hr
-  # "step"     = 60 * 60, # seconds per step 1 hr
+  "step"     = 60 * 60 * hr, # seconds per step 6 hr
   
   # value indicating every n-th time step that should be exported:
   "plt_step" = 1, 
   
   # set direction of simulation
-  # "direct" = "fwd" # forward
-  "direct" = "bck" # backward
+  "direct" = fwd_bck 
 ) %T>% 
   print()
 
@@ -552,10 +557,9 @@ simulation_time <- seq(
 ```{r particle-setup}
 # for each time step determine how many particles are released:
 n_particles           <- rep(NA, length(simulation_time))
-# n_particles[simulation_time <= release_start] <- 0
-# n_particles[simulation_time >= release_end]   <- release_n
 n_particles[simulation_time <= rel_params[["start"]]] <- 0
-n_particles[simulation_time >= rel_params[["end"]]]   <- rel_params[["num"]]  * length(rel_params$coords$lon)
+n_particles[simulation_time >= rel_params[["end"]]]   <- 
+  rel_params[["num"]]  * length(rel_params$coords$lon)
 
 n_particles[is.na(n_particles)] <-
   approx(
@@ -572,6 +576,8 @@ n_particles <- switch(
   "bck" = rev(n_particles)
 )
 
+n_particles
+
 # create a SpatVector for the particles:
 particles <-
   data.frame(
@@ -579,7 +585,7 @@ particles <-
     pos_y = rep(rel_params$coords$lat,  rel_params$num),
     # pos_z = rep(rel_params$coords$depth,  rel_params$num),
     id = rep(letters[seq(length(rel_params$coords$lon))], rel_params$num)
-  ) %>%
+  ) %>% 
   terra::vect(
     geom = c("pos_x", "pos_y"),
     crs  = "EPSG:4326" # WGS84
