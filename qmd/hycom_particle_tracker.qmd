@@ -126,13 +126,14 @@ WS20342
 traj_req_loc_temp <- 
   here("data", "raw") %>% 
   dir_ls(regexp = "trajectory_request") %>% 
+  str_subset("~", negate = TRUE) %>%
   readxl::read_xlsx(sheet = "Backward_Keys_11") %>% 
   tidyr::nest(.by = cruise_id) 
 
-cruise_num <- 1
+cruise_num <- 2
 
 # set direction of simulation
-fwd_bck <- c("fwd", "bck")[2]
+fwd_bck <- c("fwd", "bck")[1]
 ```
 
 
@@ -141,7 +142,7 @@ traj_req_loc <-
   slice(traj_req_loc_temp, cruise_num) %>% 
   tidyr::unnest(data) %>%
   {
-    path_prefix <<- pull(., cruise_id)
+    path_prefix <<- pull(., cruise_id)[1]
     print(path_prefix)
     .
     }
@@ -173,7 +174,7 @@ plot_out_path <- here(
 
 print(basename(plot_out_path))
 dir_create(dirname(plot_out_path))
-fs::dir_create(plot_out_path)
+dir_create(plot_out_path)
 
 ```
 
@@ -204,8 +205,6 @@ hycom_filt_path <-
       date, 
       # as_date("2017-10-11") - days(10), 
       # as_date("2017-10-12") + days(5)
-      # as_date("2017-10-01"), 
-      # as_date("2017-10-31")
       months[1],
       months[2]
       )
@@ -316,7 +315,6 @@ read_mover <- function(ncdfile, xvar = "u", yvar = "v", hycom_time = FALSE) {
 extend_data <- function(r, band = 21) {
   terra::focal(
     x         = r,
-    # w         = matrix(1, band, band),
     w         = band, # square
     fun       = mean,
     na.rm     = TRUE,
@@ -365,7 +363,7 @@ if (FALSE) {
 
 # if (ext(wind_u) != ext(water_u)) {
 #   
-#   message("Area of interest between water and wind do not intersect. Croping!")
+#   message("Area of interest between water and wind do not intersect. Cropping!")
 #   # Define a common extent (could be from one raster or custom)
 #   common_ext <- intersect(ext(wind_u), ext(water_u))
 #   
@@ -393,7 +391,7 @@ plot(water_v)
 
 ```{r country-download}
 if (!exists("land_mask")) {
-  ## Countries for which the shorelines are downloaded and plotted
+  # Countries for which the shorelines are downloaded and plotted
   countries <- c("USA", "Cuba", "Bahamas")
   
   gd_load <- lapply(
@@ -470,30 +468,17 @@ rel_params <- list(
   "start"  = as.POSIXct(as_datetime(months[1]), tz = "UTC"),
   
    # time at which the simulated release should end:
-  "end"    = as.POSIXct(as_datetime(months[1]) + days(4), tz = "UTC"),
-  # "end"    = as.POSIXct(end_date + days(1), tz = "UTC"),
+  "end"    = as.POSIXct(as_datetime(months[1]) + days(7), tz = "UTC"),
   
   # number of particles to release in total:
-  # "num"    = 10,
   "num"    = 100,
   
   # release coordinates:
-  # "coords" = c(
-  #   -83, # lon
-  #   24,  # lat
-  #   0    # depth not used in simulation
-  #   )
-  # "coords" = c( # location of particle start
-  #   -81.25, # lon
-  #   25.5,  # lat
-  #   0    # depth not used in simulation
-  #   )
-  "coords" = list( # location of particle start
-    # "lon"   = c(traj_req_loc$lon, -81.25, -82.6, -83), # lo
-    # "lat"   = c(traj_req_loc$lat, 25.5, 24.2, 26)#,
-    "lon"   = c(traj_req_loc$lon), # lo
-    "lat"   = c(traj_req_loc$lat)  # lat
-    # "depth" = c(0, 0, 0)   
+  "coords" = list( 
+    "lon"   = c(-81.185833,  -80.921502, -80.534178),
+    "lat"   = c(25.341333, 25.061238, 25.16645)
+    # "lon"   = c(traj_req_loc$lon), 
+    # "lat"   = c(traj_req_loc$lat)
     )
   ) %T>% 
   print()
@@ -502,7 +487,6 @@ rel_params <- list(
 base_plt +
   annotate(
     geom = "point",
-    # data = rel_params$coords, 
     x = rel_params$coords$lon, y = rel_params$coords$lat,
     color = "red", 
     alpha = 0.5,
@@ -525,10 +509,7 @@ sim_param <- list(
   "start"    = as.POSIXct(as_datetime(months[1]), tz = "UTC"),
   
   # time at which the simulation should stop:
-  # "end"      = as.POSIXct(as_datetime(months[2]), tz = "UTC"), # end
-  # "end"      = as.POSIXct(end_date + days(1), tz = "UTC"), # end
   "end"      = as.POSIXct(end_date, tz = "UTC"), # end
-  # "end"      = as.POSIXct(as_datetime(months[1]) + days(2), tz = "UTC"), # end
   
   # time step of simulation in seconds:
   "step"     = 60 * 60 * hr, # seconds per step 6 hr
@@ -538,7 +519,7 @@ sim_param <- list(
   
   # set direction of simulation
   "direct" = fwd_bck 
-) %T>% 
+  ) %T>% 
   print()
 
 # when simulation occurs
@@ -565,7 +546,7 @@ n_particles[is.na(n_particles)] <-
   approx(
     c(0, rel_params$num),
     n = 2 + sum(is.na(n_particles))
-  )$y[c(-1, - (2 + sum(is.na(n_particles))))]
+  )$y[c(-1, - (2 + sum(is.na(n_particles))))] * length(rel_params$coords$lon)
 
 n_particles <- round(n_particles)
 
@@ -583,8 +564,7 @@ particles <-
   data.frame(
     pos_x = rep(rel_params$coords$lon,  rel_params$num),
     pos_y = rep(rel_params$coords$lat,  rel_params$num),
-    # pos_z = rep(rel_params$coords$depth,  rel_params$num),
-    id = rep(letters[seq(length(rel_params$coords$lon))], rel_params$num)
+    id    = rep(letters[seq(length(rel_params$coords$lon))], rel_params$num)
   ) %>% 
   terra::vect(
     geom = c("pos_x", "pos_y"),
@@ -607,6 +587,9 @@ TODO: add coastline boundary
 TODO: add in if NA extract then replace with previous value
 
 ```{r sim-run}
+# fps for video
+fps <- 10
+
 # create a list in which results should be stored:
 part_results          <- list()
 previous_position     <- particles
@@ -635,7 +618,6 @@ steps <- switch(
 ## start looping the simulation times
 for (i in steps) {
 # for (i in steps[1:2]) {
-  # message(paste(i, "of", length(simulation_time)))
   print(paste(i, "of", length(simulation_time)))
   
   # Load the water currents that are closest to the current simulation time
@@ -886,6 +868,7 @@ for (i in steps) {
         size    = 0.5, # adjust arrow thickness
         na.rm   = TRUE
         ) +
+        
       scale_color_cross_blended_c(
         name   = "Current", 
         breaks = seq(0, 3, 1),
@@ -898,7 +881,7 @@ for (i in steps) {
       
       geom_point(
         data = as_tibble(rel_params$coords) %>% 
-          mutate(id = letters[seq(length( rel_params$coords$lon))]),
+          mutate(id = letters[seq(length(rel_params$coords$lon))]),
         aes(x = lon, y = lat, color = id),
         alpha = 0.75,
         size = rel(2),
@@ -910,8 +893,15 @@ for (i in steps) {
         name = "ID", 
         guide = guide_legend(order = 1)
         ) +  
-        
+      
       ggnewscale::new_scale_color() +
+     
+      geom_point(
+         data =  as_tibble(traj_req_loc),
+        aes(x = lon, y = lat),
+        color = "black",
+        alpha = 0.75
+      ) +
       
       # particles  
       tidyterra::geom_spatvector(
@@ -948,7 +938,6 @@ for (i in steps) {
 
 
 ## STEP 8: Convert Figures into Video using `ffmpeg` ----
-
 particle_video_file <-
   here(
     dirname(plot_out_path), 
@@ -956,9 +945,11 @@ particle_video_file <-
     paste0(
       c(
         path_prefix,
-        "particle_n",
+        "n_part",
         rel_params$num,
         sim_param$direct,
+        fps,
+        "fps",
         paste0(format(Sys.Date(), "%Y_%m_%d"), ".mp4")
         ), 
       collapse = "_"
@@ -970,14 +961,12 @@ dir_create(dirname(particle_video_file))
 system2(
   here(ffmpeg_path),
   paste(
-    "-r 2 -i",
+    "-r", fps, "-i",
     here(plot_out_path, "out%03d.png"),
     "-c:v libx264 -pix_fmt yuv420p",
     particle_video_file
     )
   )
-
-
 
 
 ## STEP 9: Save Particle Trajectories ----
@@ -1010,7 +999,6 @@ readr::write_csv(
   )
 
 cruise_num <- cruise_num + 1
-# if (cruise_num > length(wind_path) - 1) {
 if (cruise_num > nrow(traj_req_loc_temp) - 1) {
   stop("This is the last one")
 }
@@ -1018,6 +1006,14 @@ if (cruise_num > nrow(traj_req_loc_temp) - 1) {
 
 
 ```{r}
+
+ggplot() +
+   geom_point(
+         data = as_tibble(traj_req_loc),
+        aes(x = lon, y = lat),
+        color = "red",
+      )
+
 ggplot() +
     # base_plt +
     geom_line(
