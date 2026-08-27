@@ -1249,3 +1249,29 @@ here(dirname(plot_out_path), paste0(paste0(
 ), ".mp4"))
 ```
 
+
+```{r}
+shelf(seascapeR, mapview, lwgeom)
+
+fknms_ply <- seascapeR::get_url_ply(
+  "fknms",
+  dir_ply = here("data", "raw")
+)
+
+mapviewOptions(
+  basemaps = "Esri.WorldImagery"
+)
+
+mapview::mapView(fknms_ply) %>%
+  mapedit::editMap()
+
+
+split_geom <- lwgeom::st_split(
+  st_geometry(polygon_sf),
+  blade
+)
+fl_crs <- "EPSG:6442"
+st_as_sf(split_geom) %>%
+  st_cast("POLYGON")
+```
+
