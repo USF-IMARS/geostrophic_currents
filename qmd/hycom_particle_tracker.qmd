@@ -1251,7 +1251,9 @@ here(dirname(plot_out_path), paste0(paste0(
 
 
 ```{r}
-shelf(seascapeR, mapview, lwgeom)
+shelf(marinebon/seascapeR, mapview, lwgeom, writexl)
+
+fl_crs <- "EPSG:6442"
 
 fknms_ply <- seascapeR::get_url_ply(
   "fknms",
@@ -1262,16 +1264,163 @@ mapviewOptions(
   basemaps = "Esri.WorldImagery"
 )
 
-mapview::mapView(fknms_ply) %>%
+split_mutliline <- 
+  mapview::mapView(fknms_ply) %>%
   mapedit::editMap()
 
+fknms_ply_prj <- st_transform(fknms_ply, fl_crs) 
+multiline_prj <- 
+  st_transform(split_mutliline$finished, fl_crs) %>% 
+  st_geometry() %>% 
+  st_combine()
+
+plot((multiline_prj))
 
 split_geom <- lwgeom::st_split(
-  st_geometry(polygon_sf),
-  blade
+  st_geometry(fknms_ply_prj),
+  multiline_prj
 )
-fl_crs <- "EPSG:6442"
-st_as_sf(split_geom) %>%
-  st_cast("POLYGON")
+
+split_geom_ply <- 
+  split_geom %>% 
+  st_as_sf() %>%
+  st_collection_extract() %>% 
+  st_cast("POLYGON") %>% 
+  mutate(
+    id = row_number(),
+    id = as.character(id)
+    ) %>%
+  filter(id == "2")
+
+if (FALSE) {
+  dir_create(here("data", "raw", "fknms_south"))
+  st_write(split_geom_ply, here("data", "raw", "fknms_south", "fknms_south.shp"))
+}
+
+(split_geom_ply %>% 
+  ggplot() +
+  geom_sf()) %>% 
+  plotly::ggplotly()
+
+
+fknms_south <- 
+  here("data", "raw", "fknms_south") %>% 
+  dir_ls(regexp = "\\.shp$") %>% 
+  st_read() %>% 
+  st_transform("EPSG:4326")
+
+base_plt +
+  geom_sf(data = fknms_south, fill = NA, color = "red")
+
+
+particle_track_paths <- here("data", "plots", "hycom_particle_tracker") %>%
+  dir_ls() %T>% 
+  print() %>% 
+  str_subset("2026_08_27") %>% 
+  dir_ls(regexp = "particle_tracks") %>% 
+  dir_ls() %>% 
+  print()
+ 
+particle_track <- 
+  particle_track_paths %>% 
+  str_subset("WS17282") %>% 
+  readr::read_csv(show_col_types = FALSE)
+
+within_fk_test <- 
+  particle_track %>% 
+  st_as_sf(coords = c("lon", "lat"), crs = "EPSG:4326") %>% 
+  st_filter(
+    fknms_south,
+    .predicate = st_intersects
+  )
+
+base_plt +
+  geom_sf(data = fknms_south, fill = NA, color = "red") +
+  geom_sf(data = within_fk_test, color = "green")
+
+within_fk <- 
+  map(
+    particle_track_paths, 
+    \(.x) {
+      particle_track <- readr::read_csv(.x, show_col_types = FALSE)
+      
+      within_fk <-
+        particle_track %>%
+        st_as_sf(coords = c("lon", "lat"), crs = "EPSG:4326") %>%
+        st_filter(fknms_south, .predicate = st_intersects)
+      }
+  )
+
+within_fk_bind <- 
+  list_rbind(within_fk, names_to = "cruise") %>% 
+  mutate(
+    cruise = basename(cruise),
+    cruise = str_remove(cruise, "_.*")
+    ) %>% 
+  st_as_sf()
+
+plt_within <- 
+  (base_plt +
+  geom_sf(data = fknms_south, fill = NA, color = "red") +
+  geom_sf(data = within_fk_bind, aes(color = as.character(part_num), group = cruise),
+          size = rel(0.5)) +
+  labs(
+    shape = "Cruise",
+    color = "Particle\nNumber"
+  ) +
+  guides(color = guide_legend(ncol = 2)) +
+  facet_wrap(~cruise, ncol = 2) +
+  coord_sf(expand = FALSE))
+plt_within
+{
+   # create image file
+    png(
+      here(dirname(plot_out_path), "particles_within_fknms.png"),
+      width  = 3000,
+      height = 2000,
+      res    = 300,
+      type   = "cairo"
+      ) 
+  
+    print(plt_within)
+    dev.off()
+    }
+
+  plotly::ggplotly(plt_within)
+
+within_part <- 
+  within_fk_bind %>% 
+  distinct(cruise, part_id, part_num) 
+
+within_part_count <- count(within_part, cruise, part_id)
+
+
+list(
+  "within_fknms" = as_tibble(within_fk_bind) %>% 
+                   mutate(
+                     lon = st_coordinates(geometry)[, "X"],
+                     lat = st_coordinates(geometry)[, "Y"]
+                   ) %>% 
+                   select(-geometry),
+  "particles" = within_part,
+  "count" = within_part_count
+  ) %>% 
+  writexl::write_xlsx(here(dirname(plot_out_path), "particles_within_fknms.xlsx"))
+
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
