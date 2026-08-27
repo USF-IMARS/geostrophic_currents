@@ -545,7 +545,7 @@ n_particles[is.na(n_particles)] <-
   approx(
     c(0, rel_params$num),
     n = 2 + sum(is.na(n_particles))
-  )$y[c(-1, - (2 + sum(is.na(n_particles))))]
+  )$y[c(-1, -(2 + sum(is.na(n_particles))))]
 
 n_particles <- round(n_particles) * length(rel_params$coords$lon)
 
