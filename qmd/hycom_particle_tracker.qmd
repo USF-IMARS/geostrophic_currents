@@ -539,16 +539,15 @@ simulation_time <- seq(
 # for each time step determine how many particles are released:
 n_particles           <- rep(NA, length(simulation_time))
 n_particles[simulation_time <= rel_params[["start"]]] <- 0
-n_particles[simulation_time >= rel_params[["end"]]]   <- 
-  rel_params[["num"]]  * length(rel_params$coords$lon)
+n_particles[simulation_time >= rel_params[["end"]]]   <- rel_params[["num"]]  
 
 n_particles[is.na(n_particles)] <-
   approx(
     c(0, rel_params$num),
     n = 2 + sum(is.na(n_particles))
-  )$y[c(-1, - (2 + sum(is.na(n_particles))))] * length(rel_params$coords$lon)
+  )$y[c(-1, - (2 + sum(is.na(n_particles))))]
 
-n_particles <- round(n_particles)
+n_particles <- round(n_particles) * length(rel_params$coords$lon)
 
 # set direction of particle disbursement
 n_particles <- switch(
