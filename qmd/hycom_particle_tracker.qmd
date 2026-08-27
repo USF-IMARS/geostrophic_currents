@@ -1004,54 +1004,6 @@ if (cruise_num > nrow(traj_req_loc_temp) - 1) {
 ```
 
 
-```{r}
-
-ggplot() +
-   geom_point(
-         data = as_tibble(traj_req_loc),
-        aes(x = lon, y = lat),
-        color = "red",
-      )
-
-ggplot() +
-    # base_plt +
-    geom_line(
-      data = test_p,
-      aes(
-        x = lon, 
-        y = lat,
-        color = part_id,
-        group = part_num),
-      linetype = "dashed",
-      alpha = 0.5
-      ) +
-  geom_sf(
-    data = test_p,
-  aes(color = part_id)
-  ) +
-    theme()
-
-plotly::ggplotly(
-    ggplot() +
-    # base_plt +
-    geom_line(
-      data = test_p,
-      aes(
-        x = st_coordinates(geometry)[,1], 
-        y = st_coordinates(geometry)[,2],
-        color = part_id,
-        group = part_num),
-      linetype = "dashed",
-      alpha = 0.5
-      ) +
-  geom_sf(
-    data = test_p,
-  aes(color = part_id, group = part_num, time = time)
-  ) +
-    theme()
-)
-
-```
 
 
 # ERA5 Wind Data from csv
@@ -1074,7 +1026,7 @@ era_wind <-
 
 era_wind %>% 
   filter(
-    date_utc == "2022-07-30" & hour_utc == 5
+    date_utc == "2020-12-08" & hour_utc == 5
   ) %>%
   ggplot() +
   geom_raster(
@@ -1084,7 +1036,7 @@ era_wind %>%
 
 era_wind %>% 
   filter(
-    date_utc == "2022-07-30" & hour_utc == 5
+    date_utc == "2020-12-080" & hour_utc == 5
   ) %>%
   mutate(
     # .keep = "used",
@@ -1093,6 +1045,12 @@ era_wind %>%
   ) %>% 
   ggplot() +
  # wind
+  geom_streamline(aes(
+    x = longitude, 
+    y = latitude,  
+    dx = u10_m_s * scale * 2, 
+    dy = v10_m_s * scale * 2)
+    ) +
       metR::geom_vector(
         # data    = win_arrow,
         mapping = aes(
@@ -1120,13 +1078,14 @@ era_wind %>%
 ```{r}
 era_wind %>% 
   filter(
-    date_utc == "2022-07-30" & hour_utc == 5
+    date_utc == "2020-12-08" & hour_utc == 5
   ) %>%
   mutate(
     # .keep = "used",
     # mag = sqrt(u10_m_s^2 + v10_m_s^2),
     # diff = mag - wind_speed_m_s
-    angle = Angle(u10_m_s, v10_m_s)
+    angle = Angle(u10_m_s, v10_m_s),
+    mags = Mag(u10_m_s, v10_m_s)
   ) %>% 
   slice(c(70 )) %>%
   ggplot() +
@@ -1136,7 +1095,7 @@ era_wind %>%
         mapping = aes(
           x = longitude, 
           y = latitude,    
-          mag = wind_speed_m_s*10,
+          mag = mags,
           angle =  angle,
           color = wind_speed_m_s
           ),
@@ -1150,7 +1109,8 @@ era_wind %>%
         breaks = seq(0, 20, 5),
         limits = c(0, 20),
         oob    = scales::oob_squish
-        ) 
+        ) +
+  scale_mag()
 
 
 ```
@@ -1237,75 +1197,64 @@ era_v10_m_s <-
 
 
 
-```{r}
-path_prefix <- "dadfad"
-here(dirname(plot_out_path), paste0(paste0(
-  c(
-    cruise_id,
-    "particle_n",
-    rel_params$num,
-    format(Sys.Date(), "%Y_%m_%d")
-  ), collapse = "_"
-), ".mp4"))
-```
-
+# Extract Particles within Florida Keys National Marine Sanctuary
 
 ```{r}
 shelf(marinebon/seascapeR, mapview, lwgeom, writexl)
 
-fl_crs <- "EPSG:6442"
+if (FALSE) {
+  
+  fl_crs <- "EPSG:6442"
 
-fknms_ply <- seascapeR::get_url_ply(
-  "fknms",
-  dir_ply = here("data", "raw")
-)
-
-mapviewOptions(
-  basemaps = "Esri.WorldImagery"
-)
-
-split_mutliline <- 
-  mapview::mapView(fknms_ply) %>%
-  mapedit::editMap()
-
-fknms_ply_prj <- st_transform(fknms_ply, fl_crs) 
-multiline_prj <- 
-  st_transform(split_mutliline$finished, fl_crs) %>% 
-  st_geometry() %>% 
-  st_combine()
-
-plot((multiline_prj))
-
-split_geom <- lwgeom::st_split(
-  st_geometry(fknms_ply_prj),
-  multiline_prj
-)
-
-split_geom_ply <- 
-  split_geom %>% 
-  st_as_sf() %>%
-  st_collection_extract() %>% 
-  st_cast("POLYGON") %>% 
-  mutate(
-    id = row_number(),
-    id = as.character(id)
-    ) %>%
+  fknms_ply <- seascapeR::get_url_ply(
+    "fknms",
+    dir_ply = here("data", "raw")
+  )
+  
+  mapviewOptions(basemaps = "Esri.WorldImagery")
+  
+  split_mutliline <- 
+    mapview::mapView(fknms_ply) %>%
+    mapedit::editMap()
+  
+  fknms_ply_prj <- st_transform(fknms_ply, fl_crs) 
+  multiline_prj <- 
+    st_transform(split_mutliline$finished, fl_crs) %>% 
+    st_geometry() %>% 
+    st_combine()
+  
+  plot((multiline_prj))
+  
+  split_geom <- lwgeom::st_split(
+    st_geometry(fknms_ply_prj),
+    multiline_prj
+    )
+  
+  split_geom_ply <- 
+    split_geom %>% 
+    st_as_sf() %>%
+    st_collection_extract() %>% 
+    st_cast("POLYGON") %>% 
+    mutate(
+      id = row_number(),
+      id = as.character(id)
+      ) %>%
   filter(id == "2")
 
-if (FALSE) {
+  (split_geom_ply %>% 
+    ggplot() +
+    geom_sf()) %>% 
+    plotly::ggplotly()
+
   dir_create(here("data", "raw", "fknms_south"))
   st_write(split_geom_ply, here("data", "raw", "fknms_south", "fknms_south.shp"))
+  st_write(multiline_prj, here("data", "raw", "fknms_south", "fknms_split_line.shp"))
+
 }
-
-(split_geom_ply %>% 
-  ggplot() +
-  geom_sf()) %>% 
-  plotly::ggplotly()
-
 
 fknms_south <- 
   here("data", "raw", "fknms_south") %>% 
-  dir_ls(regexp = "\\.shp$") %>% 
+  dir_ls(regexp = "fknms_south\\.shp$") %>% 
   st_read() %>% 
   st_transform("EPSG:4326")
 
