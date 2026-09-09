@@ -577,7 +577,10 @@ part_proj <- terra::crs("EPSG:6442") # West Florida
 drift_factor    <- 0.03
 
 # the diffusion coefficient, used in random walk simulation
-diffusion_coeff <- 1e5
+sim_param[["diff_coeff"]] <- 100000 
+sim_param[["dim"]]        <- 2 # 1 dimension
+# sim_param[["dim"]]        <- 6 # 3 dimension
+# diffusion_coeff <- 1e5
 ```
 
 ## STEP 7: Run Particle Releae Simulation
@@ -677,7 +680,7 @@ for (i in steps) {
     cbind(
       "x" = runif(n_particles[i], -1, 1),
       "y" = runif(n_particles[i], -1, 1)
-      ) * sqrt(diffusion_coeff * sim_param[["step"]] * 6 / 1e4)
+      ) * sqrt(sim_param[["diff_coeff"]] * sim_param[["step"]] * sim_param[["dim"]]  / 1e4)
 
   
   # turn particle information into a spatvector object:
