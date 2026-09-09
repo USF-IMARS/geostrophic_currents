@@ -439,8 +439,32 @@ first_day <-
     }
   ) %>% 
   list_c()
-  
-within_fk_bind_5d <- within_fk_bind %>% 
+
+face_label <- 
+  within_fk_bind %>% 
+  as_tibble() %>% 
+  distinct(cruise, time) %>% 
+  mutate(
+    .by   = cruise, 
+    first = as_date(first(time)),
+    last  = as_date(last(time)),
+    first = format(first, "%b %d %Y"),
+    last  = format(last,  "%b %d %Y"),
+  ) %>% 
+  distinct(cruise, first, last) %>% 
+  mutate(
+    face_label = glue::glue("{cruise} ({first} - {last})")
+  ) %>%
+  select(-2, -3)
+
+within_fk_bind <- 
+  within_fk_bind %>% 
+  left_join(
+    face_label,
+    by = "cruise"
+  )
+
+within_fk_bind_7d <- within_fk_bind %>% 
   filter(
     time %in% first_day
     # between(time, first_day$time, first_day$time2)
@@ -456,7 +480,7 @@ particle_arrow <-
   geom_sf(data = fknms_south, fill = NA, color = "red") +
   ggarchery::geom_arrowsegment(
     data = within_fk_bind,
-    # data = within_fk_bind_5d,
+    # data = within_fk_bind_7d,
     aes(
       x = lon,
       y = lat,
@@ -471,8 +495,8 @@ particle_arrow <-
     show.legend = FALSE
   ) +
   geom_point(
-    data = filter(within_fk_bind, .by = cruise, time == first(time)) %>%
-    # data = filter(within_fk_bind_5d, .by = cruise, time == first(time)) %>%
+    # data = filter(within_fk_bind, .by = cruise, time == first(time)) %>%
+    data = filter(within_fk_bind_7d, .by = cruise, time == first(time)) %>%
       distinct(cruise, lat, lon),
     aes(x = lon, y = lat),
     color = "black",
@@ -495,7 +519,8 @@ particle_arrow <-
     color = "Particle\nNumber"
   ) +
   guides(color = guide_legend(ncol = 2)) +
-  facet_wrap(~cruise, ncol = 2) +
+  # facet_wrap(~cruise, ncol = 2) +
+  facet_wrap(~face_label, ncol = 2) +
   coord_sf(
     xlim = c(-83.3, -79.75),
     ylim = c(24.2, 25.7),
