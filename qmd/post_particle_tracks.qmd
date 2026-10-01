@@ -317,6 +317,8 @@ within_all2 <-
     lon_lead = lead(lon, default = last(lon)),
     lat_lead = lead(lat, default = last(lat))
   )
+
+within_all2
 ```
 
 
@@ -369,6 +371,8 @@ within_arrows <-
     expand = FALSE
     )
 
+
+
 # within_arrows
 if (FALSE) {
  # create image file
@@ -383,6 +387,8 @@ if (FALSE) {
   print(within_arrows)
 
   dev.off()
+} else {
+    print(within_arrows)
   }
 ```
 
@@ -479,30 +485,39 @@ particle_arrow <-
   base_plt +
   geom_sf(data = fknms_south, fill = NA, color = "red") +
   ggarchery::geom_arrowsegment(
-    data = within_fk_bind,
+    data = filter(within_fk_bind, cruise != "WS17282"),
+    # data = within_fk_bind,
     # data = within_fk_bind_7d,
     aes(
       x = lon,
       y = lat,
       xend = lon_lead,
       yend = lat_lead,
-      color = part_num
+      # color = part_num # each particle
+      group = part_num, # each particle
+      color = part_id # starting location
     ),
     linewidth = rel(0.2),
     arrow_positions = 0.5,
     arrows = arrow(length = unit(0.01, "inches")),
     na.rm = TRUE,
-    show.legend = FALSE
+    key_glyph = "point"
+    # show.legend = FALSE
   ) +
   geom_point(
     # data = filter(within_fk_bind, .by = cruise, time == first(time)) %>%
     data = filter(within_fk_bind_7d, .by = cruise, time == first(time)) %>%
-      distinct(cruise, lat, lon),
-    aes(x = lon, y = lat),
+      distinct(cruise, lat, lon, part_id),
+    aes(x = lon, 
+        y = lat, 
+        fill = part_id # starting location
+        ),
     color = "black",
     # fill = "black",
-    alpha = 0.5,
-    shape = 20,
+    alpha = 0.8,
+    size = rel(5),
+    shape = 21,
+    stroke = rel(1.2),
     show.legend = FALSE
   ) + 
   # geom_segment(
@@ -516,23 +531,39 @@ particle_arrow <-
   #   ) +
   labs(
     shape = "Cruise",
-    color = "Particle\nNumber"
+    color = NULL
+    # color = "Particle\nNumber"
   ) +
-  guides(color = guide_legend(ncol = 2)) +
+  scale_color_manual(
+    values = c("#E69F00", "#56B4E9", "#009E73"),
+    labels = c("Everglades", "East Florida Bay", "West Florida Bay")
+    ) +
+  scale_fill_manual(
+    values = c("#E69F00", "#56B4E9", "#009E73"),
+    labels = c("Everglades", "East Florida Bay", "West Florida Bay")
+    ) +
+  guides(color = guide_legend(ncol = 3, override.aes = list(size = rel(3)))) +
   # facet_wrap(~cruise, ncol = 2) +
-  facet_wrap(~face_label, ncol = 2) +
+  # facet_wrap(~face_label, ncol = 2) +
+  facet_wrap(~face_label, ncol = 1) +
   coord_sf(
     xlim = c(-83.3, -79.75),
     ylim = c(24.2, 25.7),
     expand = FALSE
-    )
+    ) +
+  theme(
+    strip.text = element_text(size = rel(2)),
+    axis.text = element_text(size = rel(1.5)),
+    legend.position = "bottom",
+    legend.text = element_text(size = rel(2))
+  )
 
 # within_arrows
-if (TRUE) {
+if (T) {
  # create image file
   png(
     here(plot_out_path, "full_particles_arrow.png"),
-    width  = 3000 * 2,
+    width  = 3500,
     height = 2000 * 2,
     res    = 300,
     type   = "cairo"
@@ -541,7 +572,12 @@ if (TRUE) {
   print(particle_arrow)
 
   dev.off()
+} else {
+  print(particle_arrow)
+    
   }
+
+
 
 ```
 
