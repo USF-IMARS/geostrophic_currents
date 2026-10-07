@@ -536,11 +536,11 @@ particle_arrow <-
   ) +
   scale_color_manual(
     values = c("#E69F00", "#56B4E9", "#009E73"),
-    labels = c("Everglades", "East Florida Bay", "West Florida Bay")
+    labels = c("Everglades", "West Florida Bay", "East Florida Bay")
     ) +
   scale_fill_manual(
     values = c("#E69F00", "#56B4E9", "#009E73"),
-    labels = c("Everglades", "East Florida Bay", "West Florida Bay")
+    labels = c("Everglades", "West Florida Bay", "East Florida Bay")
     ) +
   guides(color = guide_legend(ncol = 3, override.aes = list(size = rel(3)))) +
   # facet_wrap(~cruise, ncol = 2) +
